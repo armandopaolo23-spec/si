@@ -1,4 +1,5 @@
-# Stack fijo del proyecto. pygame se suma en la fase 4.
+# Stack fijo del proyecto.
 numpy
 sounddevice
+pygame
 pytest

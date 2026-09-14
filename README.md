@@ -7,8 +7,8 @@ correcta.
 Este repositorio tambien contiene `NodoAlertaTempranaMultiriesgo/`, un
 proyecto distinto y sin relacion con el tutor.
 
-Estado: **fases 1 (motor de audio), 2 (modelo de pista) y 3 (evaluador)
-terminadas**. Faltan las fases 4 a 6 (juego, acordes, generador).
+Estado: **fases 1 a 4 terminadas** (motor de audio, modelo de pista,
+evaluador y juego). Faltan las fases 5 y 6 (acordes, generador).
 
 ## Instalacion
 
@@ -22,8 +22,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-`pygame` se agrega en la fase 4. Cada vez que abras una terminal nueva hay
-que volver a hacer `source .venv/bin/activate`.
+Cada vez que abras una terminal nueva hay que volver a hacer
+`source .venv/bin/activate`.
 
 ## Como verificar la fase 1
 
@@ -31,7 +31,7 @@ Las pruebas no usan microfono ni audio grabado: todas las señales se
 sintetizan dentro de `tests/sintesis.py`.
 
 ```bash
-python3 -m pytest tests/ -q          # 234 pruebas, ~5 s
+python3 -m pytest tests/ -q          # 321 pruebas, ~8 s
 ```
 
 Con la guitarra, una linea por cada pulsacion detectada:
@@ -142,7 +142,29 @@ solo fallo la desviacion, con el numero de evento y por cuantos cents). Son
 dos errores que se corrigen de forma distinta, y confundirlos hace parecer
 que el juego esta roto.
 
-## Formato de pista
+## Como verificar la fase 4
+
+```bash
+python3 tocar.py                    # todas las pistas de pistas/
+python3 tocar.py --umbral 0.004     # el valor que sugiera --calibrar
+python3 tocar.py --vista 2.0        # menos segundos en pantalla
+```
+
+Controles: en el menu, flechas para elegir y Enter para tocar; jugando, Esc
+vuelve al menu; en resultados, Enter va al menu y R repite.
+
+Las notas bajan por seis carriles, uno por cuerda, con la 6a a la izquierda
+como en una tablatura mirada de frente. Los acordes ocupan los carriles de
+sus notas con un color neutro. Un acierto pinta la nota de verde y muestra
+la desviacion; un fallo la pinta de roja; una nota de mas avisa si estuvo
+alta o baja.
+
+El marcador de pulso late con el compas. Es visual y no sonoro a proposito:
+un clic por los parlantes lo captaria el microfono y el detector lo contaria
+como notas.
+
+El render se prueba sin pantalla con el driver dummy de SDL, asi que
+`pytest` recorre las tres pistas completas dibujando cada cuadro.
 
 ```json
 {
@@ -182,8 +204,14 @@ audio/
   calibracion.py medida de umbrales contra el microfono real
 nucleo/
   pista.py       modelo de pista: carga y validacion del JSON
-  evaluador.py   decide acierto, fallo o nota de mas; puntaje y racha
+  evaluador.py   decide acierto, fallo o nota de mas
+  puntaje.py     puntos de un acierto segun la racha
   simulacion.py  toca una pista con detecciones inventadas, para probar
+juego/
+  sesion.py      maquina de estados menu / jugando / resultados (pura)
+  geometria.py   en que carril y a que altura va cada nota (pura)
+  render.py      dibujo con pygame
+  aplicacion.py  bucle principal: audio, sesion y render
 pistas/
   01_cuerdas_al_aire.json      seis cuerdas al aire, 60 bpm
   02_escala_do_mayor.json      escala de Do mayor, 80 bpm
@@ -192,11 +220,13 @@ tests/
   sintesis.py    generador de pulsaciones de guitarra para las pruebas
 detector_notas.py  CLI de diagnostico (ataques, afinador, calibrar)
 mostrar_pista.py   CLI que imprime la linea de tiempo de una pista
+tocar.py           el juego
 ```
 
-`audio/analizador.py` y todo lo que esta debajo son funciones puras sobre
-arrays: no importan `sounddevice` ni `pygame`, asi que las fases siguientes
-se pueden testear sin audio ni ventana.
+`sounddevice` se importa solo en `audio/captura.py` y `pygame` solo en
+`juego/render.py` y `juego/aplicacion.py`. Todo lo demas es logica pura que
+corre sin tarjeta de sonido ni pantalla, y hay una prueba
+(`tests/test_capas.py`) que lo verifica para que no se rompa sin querer.
 
 ## Numeros medidos
 

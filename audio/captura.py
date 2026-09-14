@@ -112,6 +112,19 @@ class Captura:
         self.descartes = 0
         return descartados
 
+    def drenar(self):
+        """Devuelve los bloques disponibles sin bloquear.
+
+        Es lo que usa el bucle de render: se llama una vez por cuadro y no
+        puede esperar, porque el dibujo tiene unos 16 ms de presupuesto.
+        """
+        bloques = []
+        while True:
+            try:
+                bloques.append(self._cola.get_nowait())
+            except queue.Empty:
+                return bloques
+
     def bloques(self, espera=1.0):
         """Generador de bloques mono (float32). Bloquea hasta que llegue audio."""
         while True:
