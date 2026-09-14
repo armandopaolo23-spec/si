@@ -1,0 +1,33 @@
+{
+  "titulo": "Ejercicio 3 - Em Am C G con melodia entre acordes",
+  "bpm": 90,
+  "afinacion": ["E2", "A2", "D3", "G3", "B3", "E4"],
+  "eventos": [
+    {"t":  0.000, "dur": 1.8, "tipo": "acorde", "nombre": "Em",
+     "notas": [40, 47, 52, 55, 59, 64]},
+    {"t":  2.000, "dur": 0.6, "tipo": "nota", "midi": 64, "cuerda": 1, "traste": 0},
+    {"t":  2.667, "dur": 0.6, "tipo": "nota", "midi": 62, "cuerda": 2, "traste": 3},
+    {"t":  3.333, "dur": 0.6, "tipo": "nota", "midi": 59, "cuerda": 2, "traste": 0},
+
+    {"t":  4.000, "dur": 1.8, "tipo": "acorde", "nombre": "Am",
+     "notas": [45, 52, 57, 60, 64]},
+    {"t":  6.000, "dur": 0.6, "tipo": "nota", "midi": 60, "cuerda": 2, "traste": 1},
+    {"t":  6.667, "dur": 0.6, "tipo": "nota", "midi": 57, "cuerda": 3, "traste": 2},
+    {"t":  7.333, "dur": 0.6, "tipo": "nota", "midi": 55, "cuerda": 3, "traste": 0},
+
+    {"t":  8.000, "dur": 1.8, "tipo": "acorde", "nombre": "C",
+     "notas": [48, 52, 55, 60, 64]},
+    {"t": 10.000, "dur": 0.6, "tipo": "nota", "midi": 64, "cuerda": 1, "traste": 0},
+    {"t": 10.667, "dur": 0.6, "tipo": "nota", "midi": 60, "cuerda": 2, "traste": 1},
+    {"t": 11.333, "dur": 0.6, "tipo": "nota", "midi": 52, "cuerda": 4, "traste": 2},
+
+    {"t": 12.000, "dur": 1.8, "tipo": "acorde", "nombre": "G",
+     "notas": [43, 47, 50, 55, 59, 67]},
+    {"t": 14.000, "dur": 0.6, "tipo": "nota", "midi": 67, "cuerda": 1, "traste": 3},
+    {"t": 14.667, "dur": 0.6, "tipo": "nota", "midi": 62, "cuerda": 2, "traste": 3},
+    {"t": 15.333, "dur": 0.6, "tipo": "nota", "midi": 59, "cuerda": 2, "traste": 0},
+
+    {"t": 16.000, "dur": 2.5, "tipo": "acorde", "nombre": "Em",
+     "notas": [40, 47, 52, 55, 59, 64]}
+  ]
+}

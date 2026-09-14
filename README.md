@@ -7,8 +7,8 @@ correcta.
 Este repositorio tambien contiene `NodoAlertaTempranaMultiriesgo/`, un
 proyecto distinto y sin relacion con el tutor.
 
-Estado: **fase 1 (motor de audio) terminada**. Faltan las fases 2 a 6
-(modelo de pista, evaluador, juego, acordes, generador).
+Estado: **fases 1 (motor de audio) y 2 (modelo de pista) terminadas**.
+Faltan las fases 3 a 6 (evaluador, juego, acordes, generador).
 
 ## Instalacion
 
@@ -31,7 +31,7 @@ Las pruebas no usan microfono ni audio grabado: todas las señales se
 sintetizan dentro de `tests/sintesis.py`.
 
 ```bash
-python3 -m pytest tests/ -q          # 54 pruebas, ~4 s
+python3 -m pytest tests/ -q          # 160 pruebas, ~4 s
 ```
 
 Con la guitarra, una linea por cada pulsacion detectada:
@@ -70,6 +70,50 @@ Que conviene probar a mano:
   sube `--umbral`.
 - Un golpe en la caja: no debe salir nota; se cuenta como descartado.
 
+## Como verificar la fase 2
+
+```bash
+python3 mostrar_pista.py pistas/01_cuerdas_al_aire.json
+python3 mostrar_pista.py pistas/*.json        # revisar las tres
+```
+
+Imprime la linea de tiempo de la pista: instante, pulso, duracion, notas y
+digitacion sugerida de cada evento.
+
+Si la pista tiene errores, los informa **todos** de una vez con el numero de
+evento, y sale con codigo 1. Las pistas se escriben a mano, asi que se valida:
+tipos de cada campo, rango de notas que el detector puede oir, digitaciones
+que de verdad produzcan el pitch pedido, orden temporal, y acordes con nombre
+y al menos dos notas.
+
+## Formato de pista
+
+```json
+{
+  "titulo": "Ejercicio 1 - cuerdas al aire",
+  "bpm": 60,
+  "afinacion": ["E2", "A2", "D3", "G3", "B3", "E4"],
+  "eventos": [
+    {"t": 0.0, "dur": 1.5, "tipo": "nota", "midi": 40, "cuerda": 6, "traste": 0},
+    {"t": 2.0, "dur": 1.8, "tipo": "acorde", "nombre": "Em",
+     "notas": [40, 47, 52, 55, 59, 64]}
+  ]
+}
+```
+
+- `t` y `dur` en segundos. `t` es el instante del ataque y es lo que califica
+  el evaluador; `dur` es cuanto deberia sonar y sirve para dibujar la nota.
+- La `dur` de un evento **puede** pisar el `t` del siguiente: una cuerda sigue
+  sonando mientras se toca la que viene. Lo que no se permite es que dos
+  eventos compartan el mismo `t`; dos notas simultaneas son un `acorde`.
+- `cuerda` (1 = la mas aguda) y `traste` son opcionales y solo sugieren una
+  digitacion. La deteccion por frecuencia no distingue en que cuerda se toco,
+  asi que el evaluador acepta cualquier digitacion que produzca el pitch. Si
+  se incluyen, tienen que ser coherentes con `midi` y con `afinacion`.
+- `afinacion` es opcional; por defecto la estandar.
+- Rango valido de notas: D2 (MIDI 38) a D6 (MIDI 86), derivado de los limites
+  del detector. Una nota fuera de ahi seria imposible de acertar.
+
 ## Estructura
 
 ```
@@ -79,9 +123,17 @@ audio/
   onset.py       deteccion de ataques por flujo espectral
   analizador.py  canalizacion pura: bloques de muestras -> ataques con nota
   captura.py     envoltorio de sounddevice (unico modulo que lo importa)
+  calibracion.py medida de umbrales contra el microfono real
+nucleo/
+  pista.py       modelo de pista: carga y validacion del JSON
+pistas/
+  01_cuerdas_al_aire.json      seis cuerdas al aire, 60 bpm
+  02_escala_do_mayor.json      escala de Do mayor, 80 bpm
+  03_acordes_y_melodia.json    Em Am C G con melodia, 90 bpm
 tests/
   sintesis.py    generador de pulsaciones de guitarra para las pruebas
-detector_notas.py  CLI de diagnostico (modo ataques y modo afinador)
+detector_notas.py  CLI de diagnostico (ataques, afinador, calibrar)
+mostrar_pista.py   CLI que imprime la linea de tiempo de una pista
 ```
 
 `audio/analizador.py` y todo lo que esta debajo son funciones puras sobre

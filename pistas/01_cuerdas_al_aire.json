@@ -1,0 +1,13 @@
+{
+  "titulo": "Ejercicio 1 - cuerdas al aire",
+  "bpm": 60,
+  "afinacion": ["E2", "A2", "D3", "G3", "B3", "E4"],
+  "eventos": [
+    {"t":  0.0, "dur": 1.5, "tipo": "nota", "midi": 40, "cuerda": 6, "traste": 0},
+    {"t":  2.0, "dur": 1.5, "tipo": "nota", "midi": 45, "cuerda": 5, "traste": 0},
+    {"t":  4.0, "dur": 1.5, "tipo": "nota", "midi": 50, "cuerda": 4, "traste": 0},
+    {"t":  6.0, "dur": 1.5, "tipo": "nota", "midi": 55, "cuerda": 3, "traste": 0},
+    {"t":  8.0, "dur": 1.5, "tipo": "nota", "midi": 59, "cuerda": 2, "traste": 0},
+    {"t": 10.0, "dur": 1.5, "tipo": "nota", "midi": 64, "cuerda": 1, "traste": 0}
+  ]
+}
