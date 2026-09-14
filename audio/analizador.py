@@ -34,11 +34,21 @@ SR = 44100
 MARCO = 2048            # ventana de analisis para YIN (~46 ms)
 SALTO = 512             # avance entre ventanas (~11.6 ms)
 UMBRAL_RUIDO = 0.003    # puerta de ruido sobre el RMS de la ventana
-CONF_MINIMA = 0.5       # confianza YIN por debajo de la cual se ignora la lectura
+# Medido con el microfono integrado: la basura (notas imposibles, desviaciones
+# de 40-50 cents) venia con confianza 0.53-0.61, mientras que el E2 legitimo
+# -la cuerda que peor capta el micro- llega a 0.70 como minimo. 0.65 separa
+# las dos poblaciones; subirlo mas empieza a costar cuerdas graves buenas.
+CONF_MINIMA = 0.65      # confianza YIN por debajo de la cual se ignora la lectura
 SALTOS_ESPERA = 3       # saltos a esperar tras el ataque antes de medir pitch
 SALTOS_PITCH = 3        # lecturas de pitch a promediar (mediana)
 SALTOS_VIDA = 9         # si en tantos saltos no hubo pitch valido, se descarta
-REFRACTARIO_S = 0.08    # minimo entre dos ataques emitidos
+# Con 0.08 s aparecian dobles disparos reales de la misma pulsacion separados
+# 0.081 y 0.093 s. El techo lo pone la velocidad de ejecucion que hay que
+# admitir: semicorcheas a 120 bpm son 0.125 s, y como el analisis avanza en
+# saltos de 11.6 ms ese hueco se puede medir como 0.116 s, asi que 0.12 ya
+# se come pulsaciones legitimas (lo detecta
+# test_repique_de_la_misma_cuerda[0.125]).
+REFRACTARIO_S = 0.11    # minimo entre dos ataques emitidos
 # Corrimiento del timestamp del ataque: el flujo espectral cruza el umbral
 # algo despues del golpe real porque la ventana de Hann atenua justo las
 # muestras recien llegadas. Medido con pulsaciones sintetizadas (ver

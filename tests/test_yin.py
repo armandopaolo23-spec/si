@@ -108,3 +108,31 @@ def test_fuera_de_rango_se_rechaza():
 
 def test_marco_demasiado_corto():
     assert yin(seno(220.0, n=64), SR) == (None, 0.0)
+
+
+@pytest.mark.parametrize("f0_real", [60.0, 65.0, 68.0, 69.9])
+def test_no_devuelve_frecuencias_clavadas_en_el_borde(f0_real):
+    """Un minimo pegado al extremo del rango no es un minimo.
+
+    Con el microfono real esto aparecia como notas de 70.00 Hz exactos
+    (justo FMIN) y confianza 0.55: YIN no habia encontrado ningun minimo y
+    se quedaba con el ultimo tau de la busqueda. Una nota asi no existe ni
+    en afinacion estandar ni en drop D, asi que es mejor no reportar nada.
+    """
+    f0, confianza = yin(armonicos(f0_real, [0.8 ** k for k in range(6)]), SR)
+    assert f0 is None
+    assert confianza == 0.0
+
+
+@pytest.mark.parametrize("midi", [38, 39, 40, 85, 86])
+def test_los_extremos_que_acepta_el_validador_de_pistas_se_detectan(midi):
+    """El rechazo de bordes no debe comerse el rango que las pistas permiten.
+
+    nucleo.pista deriva MIDI_MINIMO y MIDI_MAXIMO de FMIN y FMAX, asi que
+    una nota valida en una pista tiene que ser detectable.
+    """
+    esperada = midi_a_hz(midi)
+    f0, confianza = yin(armonicos(esperada, [0.8 ** k for k in range(6)]), SR)
+    assert f0 is not None
+    assert abs(cents_entre(f0, esperada)) < 1.0
+    assert confianza > 0.9

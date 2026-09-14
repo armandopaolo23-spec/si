@@ -82,6 +82,14 @@ def yin(marco, sr, fmin=FMIN, fmax=FMAX, umbral=UMBRAL):
             return None, 0.0
 
     tau_entero = tau
+    # Un minimo pegado al borde del rango de busqueda no es un minimo: es que
+    # YIN no encontro ninguno y se quedo con el extremo. Se reconoce porque
+    # devuelve una frecuencia clavada en fmin o en fmax. Medido con el
+    # microfono real, ese caso aparecia como notas de 70.00 Hz exactos, que
+    # no existen en una guitarra afinada ni en drop D.
+    if tau_entero <= tau_min or tau_entero >= tau_max - 1:
+        return None, 0.0
+
     confianza = float(np.clip(1.0 - cmnd[tau_entero], 0.0, 1.0))
 
     # Interpolacion parabolica: sin esto la resolucion en frecuencia es la del
