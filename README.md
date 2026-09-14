@@ -31,7 +31,7 @@ Las pruebas no usan microfono ni audio grabado: todas las señales se
 sintetizan dentro de `tests/sintesis.py`.
 
 ```bash
-python3 -m pytest tests/ -q          # 160 pruebas, ~4 s
+python3 -m pytest tests/ -q          # 161 pruebas, ~4 s
 ```
 
 Con la guitarra, una linea por cada pulsacion detectada:
@@ -54,6 +54,18 @@ Al salir con Ctrl+C imprime el nivel maximo registrado. **Si con la 6a cuerda
 no pasa de ~0.01, el microfono esta cortando los graves**: acerca la laptop a
 la boca de la guitarra, sube la ganancia de entrada, o baja la puerta de ruido
 con `--umbral 0.0015`.
+
+Para entender **por que** disparo cada ataque:
+
+```bash
+python3 detector_notas.py --detalle
+```
+
+Agrega tres columnas: `dt` (hueco desde el ataque anterior), `flujo` y
+`umbral`, y el `margen` entre los dos. Un ataque real de guitarra dispara con
+margen de 6x a 30x; un margen cerca de 1x es un falso positivo al filo del
+umbral. Es la unica forma de distinguir "el detector dispara de mas" de
+"se toco de mas".
 
 Para comprobar que el microfono capta bien cada cuerda y para afinar:
 
@@ -158,7 +170,7 @@ constructor:
 | Parametro | Defecto | Que hace |
 |---|---|---|
 | `umbral_ruido` | 0.003 | Puerta de ruido RMS. Bajar si el micro entrega poco nivel. |
-| `factor` (onset) | 6.0 | Cuantas veces la mediana reciente del flujo hay que superar. Bajar si pierde pulsaciones suaves. |
+| `factor` (onset) | 6.0 | Cuantas veces la mediana reciente del flujo hay que superar. Bajar si pierde pulsaciones suaves, subir si dispara de mas. |
 | `refractario_s` | 0.08 | Minimo entre dos ataques. Subir si un golpe cuenta doble. |
 | `retardo_onset_s` | 0.014 | Correccion del timestamp. Recalibrar contra un metronomo en la fase 4. |
 | `saltos_espera` / `saltos_pitch` | 3 / 3 | Cuanto esperar y cuantas lecturas promediar. Bajar da feedback mas rapido y pitch menos estable. |

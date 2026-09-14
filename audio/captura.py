@@ -104,8 +104,13 @@ class Captura:
             try:
                 self._cola.get_nowait()
             except queue.Empty:
-                return descartados
+                break
             descartados += 1
+        # Los bloques que se perdieron por cola llena mientras el programa
+        # no estaba consumiendo tampoco cuentan: el aviso de descartes debe
+        # hablar solo del analisis, que es donde importa.
+        self.descartes = 0
+        return descartados
 
     def bloques(self, espera=1.0):
         """Generador de bloques mono (float32). Bloquea hasta que llegue audio."""

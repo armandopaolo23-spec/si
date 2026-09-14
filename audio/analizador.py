@@ -55,6 +55,8 @@ class Ataque:
     f0: float
     confianza: float
     nivel: float        # RMS de la ventana en el momento del ataque
+    flujo: float        # flujo espectral que disparo el ataque
+    umbral: float       # umbral que ese flujo tuvo que superar
 
 
 @dataclass(frozen=True)
@@ -66,6 +68,7 @@ class MarcoAnalizado:
     f0: float
     confianza: float
     flujo: float
+    umbral: float
 
 
 @dataclass
@@ -74,6 +77,8 @@ class _Pendiente:
 
     t: float
     nivel: float
+    flujo: float
+    umbral: float
     espera: int
     vida: int = 0
     lecturas: list = field(default_factory=list)
@@ -149,10 +154,10 @@ class Analizador:
             # En silencio no se gasta CPU en YIN ni en la FFT del onset, pero
             # si queda un ataque pendiente hay que cerrarlo con lo que haya.
             ataques.extend(self._cerrar_pendiente())
-            self.ultimo_marco = MarcoAnalizado(t_fin, nivel, 0.0, 0.0, 0.0)
+            self.ultimo_marco = MarcoAnalizado(t_fin, nivel, 0.0, 0.0, 0.0, 0.0)
             return ataques
 
-        flujo, supera_umbral = self._onset.procesar(self._buffer)
+        flujo, supera_umbral, umbral = self._onset.procesar(self._buffer)
         # Un mismo golpe supera el umbral en dos o tres ventanas seguidas; el
         # refractario deja pasar solo la primera, que es la que tiene el
         # timestamp correcto.
@@ -160,7 +165,8 @@ class Analizador:
                       and t_fin - self._t_ultimo_disparo >= self.refractario_s)
         f0, confianza = yin(self._buffer, self.sr, self.fmin, self.fmax)
         valida = f0 is not None and confianza >= self.conf_minima
-        self.ultimo_marco = MarcoAnalizado(t_fin, nivel, f0 or 0.0, confianza, flujo)
+        self.ultimo_marco = MarcoAnalizado(t_fin, nivel, f0 or 0.0, confianza,
+                                           flujo, umbral)
 
         if hubo_onset:
             # Un ataque nuevo cancela la espera del anterior: se emite ya con
@@ -170,6 +176,8 @@ class Analizador:
             self._pendiente = _Pendiente(
                 t=max(0.0, t_fin - self.retardo_onset_s),
                 nivel=nivel,
+                flujo=flujo,
+                umbral=umbral,
                 espera=self.saltos_espera,
             )
         elif self._pendiente is not None:
@@ -198,4 +206,5 @@ class Analizador:
         f0 = float(np.median([f for f, _ in pendiente.lecturas]))
         confianza = float(np.median([c for _, c in pendiente.lecturas]))
         return [Ataque(t=pendiente.t, nota=hz_a_nota(f0), f0=f0,
-                       confianza=confianza, nivel=pendiente.nivel)]
+                       confianza=confianza, nivel=pendiente.nivel,
+                       flujo=pendiente.flujo, umbral=pendiente.umbral)]
