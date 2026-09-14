@@ -7,8 +7,8 @@ correcta.
 Este repositorio tambien contiene `NodoAlertaTempranaMultiriesgo/`, un
 proyecto distinto y sin relacion con el tutor.
 
-Estado: **fases 1 (motor de audio) y 2 (modelo de pista) terminadas**.
-Faltan las fases 3 a 6 (evaluador, juego, acordes, generador).
+Estado: **fases 1 (motor de audio), 2 (modelo de pista) y 3 (evaluador)
+terminadas**. Faltan las fases 4 a 6 (juego, acordes, generador).
 
 ## Instalacion
 
@@ -31,7 +31,7 @@ Las pruebas no usan microfono ni audio grabado: todas las señales se
 sintetizan dentro de `tests/sintesis.py`.
 
 ```bash
-python3 -m pytest tests/ -q          # 161 pruebas, ~4 s
+python3 -m pytest tests/ -q          # 229 pruebas, ~5 s
 ```
 
 Con la guitarra, una linea por cada pulsacion detectada:
@@ -98,6 +98,44 @@ tipos de cada campo, rango de notas que el detector puede oir, digitaciones
 que de verdad produzcan el pitch pedido, orden temporal, y acordes con nombre
 y al menos dos notas.
 
+## Como verificar la fase 3
+
+El evaluador es logica pura, asi que se prueba con `pytest`. Para verlo
+funcionando, `--simular` toca una pista con detecciones inventadas y muestra
+como la calificaria, sin microfono:
+
+```bash
+python3 mostrar_pista.py pistas/02_escala_do_mayor.json --simular todos
+python3 mostrar_pista.py pistas/01_cuerdas_al_aire.json --simular tarde
+python3 mostrar_pista.py pistas/02_escala_do_mayor.json --simular tarde \
+    --tolerancia-ms 50          # apretar la ventana y ver que ya no pasa
+```
+
+Perfiles: `perfecto`, `tarde` (80 ms tarde de forma sistematica),
+`desafinado` (25 cents bajo, como la 4a cuerda real) y `desprolijo`.
+
+La simulacion corre el evaluador como lo hara el juego: bucle de 60 fps y
+detecciones que llegan con el retardo real del motor. Eso es lo que prueba
+que el retardo no inventa fallos cuando se toca bien.
+
+## Tolerancias del evaluador
+
+| | Defecto | Que significa |
+|---|---|---|
+| Temporal | +-120 ms | Cuanto antes o despues del `t` esperado vale el golpe. |
+| Afinacion | +-35 cents | Cuanta desviacion se perdona. +-50 seria "cualquier cosa que redondee a la nota correcta". |
+
+Ambas configurables en `nucleo/evaluador.py` (`Tolerancias`) y desde la CLI.
+35 cents es generoso a proposito: una guitarra acustica con las cuerdas algo
+bajas da desviaciones de 15 a 25 cents constantes, y con una ventana mas
+estrecha el juego marcaria fallo por la afinacion del instrumento en vez de
+por como se toca.
+
+La desviacion se mide en cents contra la frecuencia pedida, no comparando
+nombres de nota. Una nota 55 cents alta de E2 se lee como F2 a -45 cents:
+comparando nombres parece estar a 45 y pasaria, medida contra lo pedido esta
+a 55 y no pasa.
+
 ## Formato de pista
 
 ```json
@@ -138,6 +176,8 @@ audio/
   calibracion.py medida de umbrales contra el microfono real
 nucleo/
   pista.py       modelo de pista: carga y validacion del JSON
+  evaluador.py   decide acierto, fallo o nota de mas; puntaje y racha
+  simulacion.py  toca una pista con detecciones inventadas, para probar
 pistas/
   01_cuerdas_al_aire.json      seis cuerdas al aire, 60 bpm
   02_escala_do_mayor.json      escala de Do mayor, 80 bpm

@@ -4,16 +4,23 @@
 Es el entregable de la fase 2 y la forma de revisar una pista escrita a
 mano antes de intentar tocarla.
 
+Con --simular tambien la "toca" con detecciones inventadas y muestra como la
+calificaria el evaluador, sin microfono.
+
 Uso:
     python3 mostrar_pista.py pistas/01_cuerdas_al_aire.json
     python3 mostrar_pista.py pistas/*.json          # revisar todas
+    python3 mostrar_pista.py pistas/02_escala_do_mayor.json --simular tarde
+    python3 mostrar_pista.py pistas/02_escala_do_mayor.json --simular todos
 """
 
 import argparse
 import sys
 
-from audio.notas import nombre_midi
+from audio.notas import hz_a_nota, nombre_midi
+from nucleo.evaluador import ACIERTO, EXTRA, Evaluador, Tolerancias
 from nucleo.pista import PistaInvalida, cargar
+from nucleo.simulacion import PERFILES, generar_detecciones, reproducir
 
 
 def columna_notas(evento):
@@ -54,12 +61,67 @@ def mostrar(pista):
         print(f"Rango: {nombre_midi(graves)} a {nombre_midi(agudos)}.")
 
 
+def simular(pista, nombre_perfil, tolerancias, semilla):
+    perfil = PERFILES[nombre_perfil]
+    evaluador = Evaluador(pista, tolerancias=tolerancias)
+    detecciones = generar_detecciones(pista, perfil, semilla=semilla)
+    resultados = reproducir(evaluador, detecciones, pista.duracion)
+
+    print(f"--- simulacion '{nombre_perfil}': {perfil.descripcion}")
+    for resultado in resultados:
+        if resultado.tipo == EXTRA:
+            nota = hz_a_nota(resultado.deteccion.f0)
+            print(f"    {resultado.deteccion.t:7.3f}  EXTRA    "
+                  f"sono {nota.nombre} y no habia nada pedido ahi")
+            continue
+        evento = pista.eventos[resultado.indice]
+        esperado = columna_notas(evento)
+        if resultado.tipo == ACIERTO:
+            print(f"    {resultado.deteccion.t:7.3f}  ACIERTO  "
+                  f"evento {resultado.indice:>2} ({esperado})  "
+                  f"{1000 * resultado.error_s:+6.1f} ms  "
+                  f"{resultado.error_cents:+6.1f} cents")
+        else:
+            print(f"    {evento.t:7.3f}  FALLO    "
+                  f"evento {resultado.indice:>2} ({esperado})  no se toco")
+
+    r = evaluador.resumen
+    print(f"    resumen: {r.aciertos}/{r.total} aciertos, {r.fallos} fallos, "
+          f"{r.extras} de mas, racha maxima {r.racha_maxima}")
+    if r.aciertos:
+        ms = 1000 * r.error_temporal_medio_s
+        tiempo = ("clavado en tiempo" if abs(ms) < 5 else
+                  f"{abs(ms):.0f} ms {'tarde' if ms > 0 else 'temprano'}")
+        cents = r.error_cents_medio
+        afinacion = ("afinado" if abs(cents) < 3 else
+                     f"{abs(cents):.0f} cents "
+                     f"{'agudo' if cents > 0 else 'grave'}")
+        print(f"    en promedio: {tiempo}, {afinacion}")
+    print()
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("rutas", nargs="+", help="archivos .json de pista")
+    ap.add_argument("--simular", choices=sorted(PERFILES) + ["todos"],
+                    help="tocar la pista con detecciones inventadas y "
+                         "mostrar como la califica el evaluador")
+    ap.add_argument("--tolerancia-ms", type=float, default=None,
+                    help="ventana temporal en milisegundos")
+    ap.add_argument("--tolerancia-cents", type=float, default=None,
+                    help="ventana de afinacion en cents")
+    ap.add_argument("--semilla", type=int, default=1,
+                    help="semilla de la simulacion")
     args = ap.parse_args()
+
+    por_defecto = Tolerancias()
+    tolerancias = Tolerancias(
+        temporal_s=(por_defecto.temporal_s if args.tolerancia_ms is None
+                    else args.tolerancia_ms / 1000.0),
+        cents=(por_defecto.cents if args.tolerancia_cents is None
+               else args.tolerancia_cents))
 
     fallos = 0
     for indice, ruta in enumerate(args.rutas):
@@ -68,7 +130,17 @@ def main():
             print("-" * 72)
             print()
         try:
-            mostrar(cargar(ruta))
+            pista = cargar(ruta)
+            mostrar(pista)
+            if args.simular:
+                print()
+                perfiles = (sorted(PERFILES) if args.simular == "todos"
+                            else [args.simular])
+                print(f"Tolerancias: {1000 * tolerancias.temporal_s:.0f} ms, "
+                      f"{tolerancias.cents:.0f} cents")
+                print()
+                for nombre in perfiles:
+                    simular(pista, nombre, tolerancias, args.semilla)
         except PistaInvalida as error:
             print(error, file=sys.stderr)
             fallos += 1
