@@ -13,7 +13,8 @@ evaluador y juego). Faltan las fases 5 y 6 (acordes, generador).
 ## Instalacion
 
 Ubuntu 23.04 y posteriores no dejan instalar con pip en el Python del
-sistema (PEP 668), asi que conviene un entorno virtual:
+sistema (PEP 668, "externally-managed-environment"), asi que hace falta un
+entorno virtual:
 
 ```bash
 sudo apt install libportaudio2 python3-venv
@@ -23,7 +24,21 @@ pip install -r requirements.txt
 ```
 
 Cada vez que abras una terminal nueva hay que volver a hacer
-`source .venv/bin/activate`.
+`source .venv/bin/activate`, y correr todo con ese entorno activo.
+
+### Cuidado con la version de Python
+
+Comprobar con `python3 -V`. Las fases 1 a 3 solo necesitan numpy y
+sounddevice, que andan en cualquier version reciente. **pygame es otra
+cosa**: la version 2.6.1 publica wheels hasta CPython 3.13, asi que en
+Python 3.14 o mas nuevo `pip install pygame` intenta compilar desde el
+codigo fuente, necesita las cabeceras de SDL2 y puede fallar.
+
+Por eso `requirements.txt` pide **pygame-ce** y no pygame: es el mismo
+proyecto forkeado por parte de sus mantenedores, publica wheels para CPython
+3.14 y es reemplazo directo, `import pygame` no cambia. La suite entera de
+pruebas corre igual con uno o con otro, asi que si algun dia se vuelve a
+pygame no hay que tocar codigo, solo esa linea.
 
 ## Como verificar la fase 1
 

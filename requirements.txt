@@ -1,5 +1,10 @@
-# Stack fijo del proyecto.
+# Stack fijo del proyecto: numpy, sounddevice y pygame.
 numpy
 sounddevice
-pygame
 pytest
+
+# pygame-ce en vez de pygame: es el mismo proyecto forkeado por parte de sus
+# mantenedores, reemplazo directo (import pygame no cambia) y publica wheels
+# para CPython 3.14, que pygame 2.6.1 todavia no tiene. Si algun dia se
+# vuelve a pygame, no hay que cambiar nada de codigo.
+pygame-ce

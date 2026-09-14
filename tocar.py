@@ -35,6 +35,27 @@ def rutas_de_pistas(argumentos):
     return encontradas
 
 
+def avisar_falta_pygame(error):
+    version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    print(f"No se pudo cargar pygame: {error}", file=sys.stderr)
+    print(file=sys.stderr)
+    print("Con el entorno virtual activo:", file=sys.stderr)
+    print("    python3 -m venv .venv", file=sys.stderr)
+    print("    source .venv/bin/activate", file=sys.stderr)
+    print("    pip install -r requirements.txt", file=sys.stderr)
+    print(file=sys.stderr)
+    print(f"Estas usando Python {version}. Si pip falla con "
+          "'externally-managed-environment' es que falta activar el entorno "
+          "virtual: Ubuntu no deja instalar con pip en el Python del sistema.",
+          file=sys.stderr)
+    if sys.version_info >= (3, 14):
+        print(file=sys.stderr)
+        print(f"Ojo: pygame 2.6.1 publica wheels hasta CPython 3.13, asi que "
+              f"en Python {version} habria que compilarlo. requirements.txt "
+              "usa pygame-ce, que si tiene wheel y es reemplazo directo.",
+              file=sys.stderr)
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -68,7 +89,11 @@ def main():
                else args.tolerancia_cents))
 
     # Se importa aca y no arriba para que --help funcione sin pygame puesto.
-    from juego.aplicacion import ejecutar
+    try:
+        from juego.aplicacion import ejecutar
+    except ImportError as error:
+        avisar_falta_pygame(error)
+        sys.exit(1)
     try:
         analizador, sesion = ejecutar(
             pistas, dispositivo=args.dispositivo, sr=args.sr,
