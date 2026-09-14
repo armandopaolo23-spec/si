@@ -39,6 +39,12 @@ ACIERTO = "acierto"
 FALLO = "fallo"
 EXTRA = "extra"
 
+# Por que una deteccion no acerto nada. Distinguirlos importa: "sono algo que
+# no se pedia" y "sono lo que se pedia pero desafinado" se corrigen de formas
+# distintas, y confundirlos hace parecer que el juego esta roto.
+SIN_EVENTO = "sin_evento"
+AFINACION = "afinacion"
+
 TOLERANCIA_TEMPORAL_S = 0.12
 TOLERANCIA_CENTS = 35.0
 
@@ -69,10 +75,16 @@ class Deteccion:
 @dataclass(frozen=True)
 class Resultado:
     tipo: str                  # ACIERTO, FALLO o EXTRA
-    indice: int = None         # evento de la pista; None en un EXTRA
+    indice: int = None         # evento de la pista
     deteccion: Deteccion = None
     error_s: float = None      # deteccion.t - evento.t; positivo = tarde
     error_cents: float = None  # positivo = mas agudo de lo pedido
+    motivo: str = None         # solo en un EXTRA: SIN_EVENTO o AFINACION
+
+    # En un EXTRA con motivo AFINACION, `indice` apunta al evento que estuvo
+    # cerca en tiempo pero no se acepto por desviacion, y error_s y
+    # error_cents dicen por cuanto. Ese evento igual produce su propio FALLO
+    # cuando vence su ventana: son dos hechos distintos.
 
 
 @dataclass(frozen=True)
@@ -160,18 +172,22 @@ class Evaluador:
         return min(desviaciones, key=abs)
 
     def _emparejar(self, deteccion):
+        cercano = None     # mejor candidato que fallo solo por afinacion
         for indice in self._pendientes:
             evento = self.pista.eventos[indice]
             if abs(deteccion.t - evento.t) > self.tolerancias.temporal_s:
                 continue
             desviacion = self._desviacion(deteccion, evento)
-            if desviacion is None or abs(desviacion) > self.tolerancias.cents:
+            if desviacion is None:
                 continue
-            # Los pendientes estan en orden temporal, asi que el primero que
-            # encaja es el mas antiguo: si el que viene antes quedo sin tocar,
-            # se resolvera solo cuando su ventana venza.
-            return self._acertar(indice, deteccion, desviacion)
-        return self._extra(deteccion)
+            if abs(desviacion) <= self.tolerancias.cents:
+                # Los pendientes estan en orden temporal, asi que el primero
+                # que encaja es el mas antiguo: si el que viene antes quedo
+                # sin tocar, se resuelve solo cuando su ventana venza.
+                return self._acertar(indice, deteccion, desviacion)
+            if cercano is None or abs(desviacion) < abs(cercano[1]):
+                cercano = (indice, desviacion)
+        return self._extra(deteccion, cercano)
 
     def _acertar(self, indice, deteccion, desviacion):
         self._pendientes.remove(indice)
@@ -185,12 +201,19 @@ class Evaluador:
         return Resultado(tipo=ACIERTO, indice=indice, deteccion=deteccion,
                          error_s=error_s, error_cents=desviacion)
 
-    def _extra(self, deteccion):
+    def _extra(self, deteccion, cercano=None):
         # Un extra no corta la racha. Con microfono integrado algunos falsos
         # positivos son inevitables, y castigarlos haria sentir el juego roto
         # cuando en realidad se toco bien.
         self._extras += 1
-        return Resultado(tipo=EXTRA, deteccion=deteccion)
+        if cercano is None:
+            return Resultado(tipo=EXTRA, deteccion=deteccion,
+                             motivo=SIN_EVENTO)
+        indice, desviacion = cercano
+        evento = self.pista.eventos[indice]
+        return Resultado(tipo=EXTRA, indice=indice, deteccion=deteccion,
+                         error_s=deteccion.t - evento.t,
+                         error_cents=desviacion, motivo=AFINACION)
 
     def _cerrar_vencidas(self, t_actual):
         limite = t_actual - self.retardo_motor_s

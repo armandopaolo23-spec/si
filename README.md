@@ -31,7 +31,7 @@ Las pruebas no usan microfono ni audio grabado: todas las señales se
 sintetizan dentro de `tests/sintesis.py`.
 
 ```bash
-python3 -m pytest tests/ -q          # 229 pruebas, ~5 s
+python3 -m pytest tests/ -q          # 234 pruebas, ~5 s
 ```
 
 Con la guitarra, una linea por cada pulsacion detectada:
@@ -135,6 +135,12 @@ La desviacion se mide en cents contra la frecuencia pedida, no comparando
 nombres de nota. Una nota 55 cents alta de E2 se lee como F2 a -45 cents:
 comparando nombres parece estar a 45 y pasaria, medida contra lo pedido esta
 a 55 y no pasa.
+
+Cuando una deteccion no acierta, el resultado dice por que: `sin_evento` (no
+habia nada pedido en ese momento) o `afinacion` (habia un evento ahi mismo y
+solo fallo la desviacion, con el numero de evento y por cuantos cents). Son
+dos errores que se corrigen de forma distinta, y confundirlos hace parecer
+que el juego esta roto.
 
 ## Formato de pista
 

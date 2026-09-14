@@ -18,7 +18,8 @@ import argparse
 import sys
 
 from audio.notas import hz_a_nota, nombre_midi
-from nucleo.evaluador import ACIERTO, EXTRA, Evaluador, Tolerancias
+from nucleo.evaluador import (ACIERTO, AFINACION, EXTRA, Evaluador,
+                              Tolerancias)
 from nucleo.pista import PistaInvalida, cargar
 from nucleo.simulacion import PERFILES, generar_detecciones, reproducir
 
@@ -61,6 +62,43 @@ def mostrar(pista):
         print(f"Rango: {nombre_midi(graves)} a {nombre_midi(agudos)}.")
 
 
+def instante(pista, resultado):
+    """Momento que corresponde mostrar para un resultado."""
+    if resultado.deteccion is not None:
+        return resultado.deteccion.t
+    return pista.eventos[resultado.indice].t
+
+
+def describir(pista, resultado):
+    if resultado.tipo == ACIERTO:
+        evento = pista.eventos[resultado.indice]
+        return (f"{resultado.deteccion.t:7.3f}  ACIERTO  "
+                f"evento {resultado.indice:>2} ({columna_notas(evento)})  "
+                f"{1000 * resultado.error_s:+6.1f} ms  "
+                f"{resultado.error_cents:+6.1f} cents")
+
+    if resultado.tipo == EXTRA:
+        sono = hz_a_nota(resultado.deteccion.f0).nombre
+        if resultado.motivo != AFINACION:
+            return (f"{resultado.deteccion.t:7.3f}  EXTRA    "
+                    f"sono {sono} y no habia nada pedido ahi")
+        # Aca estaba lo importante: decir "no habia nada pedido" cuando si
+        # habia algo pedido y solo fallo la afinacion es enganoso, y son dos
+        # errores que se corrigen de forma distinta.
+        evento = pista.eventos[resultado.indice]
+        direccion = "agudo" if resultado.error_cents > 0 else "grave"
+        return (f"{resultado.deteccion.t:7.3f}  EXTRA    "
+                f"evento {resultado.indice:>2} "
+                f"({columna_notas(evento)}) pedido a "
+                f"{1000 * resultado.error_s:+.0f} ms, pero sono {sono} "
+                f"{abs(resultado.error_cents):.0f} cents {direccion}")
+
+    evento = pista.eventos[resultado.indice]
+    return (f"{evento.t:7.3f}  FALLO    "
+            f"evento {resultado.indice:>2} ({columna_notas(evento)})  "
+            f"no se toco")
+
+
 def simular(pista, nombre_perfil, tolerancias, semilla):
     perfil = PERFILES[nombre_perfil]
     evaluador = Evaluador(pista, tolerancias=tolerancias)
@@ -68,22 +106,10 @@ def simular(pista, nombre_perfil, tolerancias, semilla):
     resultados = reproducir(evaluador, detecciones, pista.duracion)
 
     print(f"--- simulacion '{nombre_perfil}': {perfil.descripcion}")
-    for resultado in resultados:
-        if resultado.tipo == EXTRA:
-            nota = hz_a_nota(resultado.deteccion.f0)
-            print(f"    {resultado.deteccion.t:7.3f}  EXTRA    "
-                  f"sono {nota.nombre} y no habia nada pedido ahi")
-            continue
-        evento = pista.eventos[resultado.indice]
-        esperado = columna_notas(evento)
-        if resultado.tipo == ACIERTO:
-            print(f"    {resultado.deteccion.t:7.3f}  ACIERTO  "
-                  f"evento {resultado.indice:>2} ({esperado})  "
-                  f"{1000 * resultado.error_s:+6.1f} ms  "
-                  f"{resultado.error_cents:+6.1f} cents")
-        else:
-            print(f"    {evento.t:7.3f}  FALLO    "
-                  f"evento {resultado.indice:>2} ({esperado})  no se toco")
+    # Se ordena por el instante que se muestra, no por el orden en que el
+    # evaluador los produjo, para que el registro se lea cronologicamente.
+    for resultado in sorted(resultados, key=lambda r: instante(pista, r)):
+        print("    " + describir(pista, resultado))
 
     r = evaluador.resumen
     print(f"    resumen: {r.aciertos}/{r.total} aciertos, {r.fallos} fallos, "

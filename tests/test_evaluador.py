@@ -3,8 +3,9 @@
 import pytest
 
 from audio.notas import midi_a_hz
-from nucleo.evaluador import (ACIERTO, EXTRA, FALLO, RETARDO_MOTOR_S,
-                              Deteccion, Evaluador, Tolerancias)
+from nucleo.evaluador import (ACIERTO, AFINACION, EXTRA, FALLO,
+                              RETARDO_MOTOR_S, SIN_EVENTO, Deteccion,
+                              Evaluador, Tolerancias)
 from nucleo.pista import desde_dict
 
 # Instante bien posterior a cualquier ventana de estas pruebas: sirve para
@@ -293,3 +294,57 @@ def test_pista_sin_detecciones_termina_toda_en_fallos():
     assert tipos(resultados) == [FALLO] * 4
     assert ev.resumen.fallos == 4
     assert ev.terminado
+
+
+# ------------------------------------------------- por que no acerto
+
+def test_un_extra_sin_nada_cerca_dice_sin_evento():
+    ev = Evaluador(pista_de(nota(1.0, 40)))
+    extra = next(r for r in ev.avanzar(5.0, [deteccion(5.0, 40)])
+                 if r.tipo == EXTRA)
+    assert extra.motivo == SIN_EVENTO
+    assert extra.indice is None
+
+
+def test_un_extra_que_solo_fallo_la_afinacion_lo_dice_y_señala_el_evento():
+    """Decir "no habia nada pedido ahi" cuando si habia es enganoso.
+
+    Es el caso que aparecio en la simulacion: una deteccion de D3 a 2.5 ms
+    del evento que pedia D3, rechazada por estar 37 cents alta. Son dos
+    errores distintos -nota equivocada contra nota desafinada- y se corrigen
+    de forma distinta, asi que el evaluador tiene que diferenciarlos.
+    """
+    ev = Evaluador(pista_de(nota(1.0, 50)))
+    extra = next(r for r in ev.avanzar(DESPUES, [deteccion(1.0025, 50, 37.0)])
+                 if r.tipo == EXTRA)
+    assert extra.motivo == AFINACION
+    assert extra.indice == 0
+    assert extra.error_cents == pytest.approx(37.0, abs=0.1)
+    assert extra.error_s == pytest.approx(0.0025, abs=1e-6)
+
+
+def test_el_evento_igual_falla_aparte_del_extra_por_afinacion():
+    ev = Evaluador(pista_de(nota(1.0, 50)))
+    resultados = ev.avanzar(DESPUES, [deteccion(1.0, 50, 40.0)])
+    assert tipos(resultados) == [EXTRA, FALLO]
+    assert all(r.indice == 0 for r in resultados)
+    assert ev.resumen.extras == 1
+    assert ev.resumen.fallos == 1
+
+
+def test_fuera_de_la_ventana_temporal_no_es_problema_de_afinacion():
+    """Si el golpe esta lejos en el tiempo, el motivo no es la afinacion
+    aunque la nota fuera la correcta."""
+    ev = Evaluador(pista_de(nota(1.0, 40)))
+    extra = next(r for r in ev.avanzar(DESPUES, [deteccion(1.5, 40)])
+                 if r.tipo == EXTRA)
+    assert extra.motivo == SIN_EVENTO
+
+
+def test_entre_varios_candidatos_desafinados_señala_el_menos_desviado():
+    ev = Evaluador(pista_de(nota(1.0, 40), nota(1.05, 45)))
+    # Suena algo a 45 cents de A2 (evento 1) y muy lejos de E2 (evento 0).
+    extra = next(r for r in ev.avanzar(DESPUES, [deteccion(1.02, 45, 45.0)])
+                 if r.tipo == EXTRA)
+    assert extra.motivo == AFINACION
+    assert extra.indice == 1
