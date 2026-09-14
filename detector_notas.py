@@ -21,6 +21,7 @@ Uso:
     python3 detector_notas.py --afinador        # modo afinador
     python3 detector_notas.py --dispositivo 3   # forzar un dispositivo
     python3 detector_notas.py --umbral 0.006    # subir la puerta de ruido
+    python3 detector_notas.py --sr 48000        # si el micro no acepta 44100
 """
 
 import argparse
@@ -99,6 +100,8 @@ def main():
                     help="modo afinador en vez de modo ataques")
     ap.add_argument("--umbral", type=float, default=None,
                     help="puerta de ruido RMS (sube si detecta en silencio)")
+    ap.add_argument("--sr", type=int, default=SR,
+                    help=f"frecuencia de muestreo (por defecto {SR})")
     args = ap.parse_args()
 
     try:
@@ -106,8 +109,9 @@ def main():
             print(dispositivos())
             return
         opciones = {} if args.umbral is None else {"umbral_ruido": args.umbral}
-        analizador = Analizador(sr=SR, **opciones)
-        with Captura(sr=SR, bloque=BLOQUE, dispositivo=args.dispositivo) as captura:
+        analizador = Analizador(sr=args.sr, **opciones)
+        with Captura(sr=args.sr, bloque=BLOQUE,
+                     dispositivo=args.dispositivo) as captura:
             try:
                 if args.afinador:
                     total = modo_afinador(captura, analizador)

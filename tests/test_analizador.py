@@ -199,3 +199,20 @@ def test_ataque_sin_pitch_claro_se_descarta_y_se_cuenta():
     ataques, analizador = analizar(x)
     assert ataques == []
     assert analizador.descartados == 1
+
+
+@pytest.mark.parametrize("sr", [44100, 48000])
+def test_funciona_a_otras_frecuencias_de_muestreo(sr):
+    """Muchos microfonos de laptop solo aceptan 48000 Hz (ver --sr)."""
+    notas = [(0.4 + 0.4 * i, midi_a_hz(midi), 0.5)
+             for i, midi in enumerate(CUERDAS_ESTANDAR)]
+    x, reales = secuencia(notas, 3.4, sr=sr, recorte_graves=0.7)
+
+    analizador = Analizador(sr=sr)
+    ataques = []
+    for inicio in range(0, len(x), SALTO):
+        ataques.extend(analizador.procesar(x[inicio:inicio + SALTO]))
+
+    assert [a.nota.nombre for a in ataques] == \
+        [nombre_midi(m) for m in CUERDAS_ESTANDAR]
+    assert max(abs(e) for e in emparejar(ataques, reales)) < TOLERANCIA_S

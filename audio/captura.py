@@ -60,11 +60,30 @@ class Captura:
 
     def __enter__(self):
         sd = cargar_sounddevice()
-        self._stream = sd.InputStream(
-            samplerate=self.sr, blocksize=self.bloque, channels=1,
-            dtype="float32", device=self.dispositivo, callback=self._callback)
+        try:
+            self._stream = sd.InputStream(
+                samplerate=self.sr, blocksize=self.bloque, channels=1,
+                dtype="float32", device=self.dispositivo, callback=self._callback)
+        except Exception as error:
+            # El caso comun en Ubuntu: el dispositivo solo acepta 48000 Hz.
+            raise RuntimeError(
+                f"No se pudo abrir el dispositivo de entrada a {self.sr} Hz: "
+                f"{error}\n{self._sugerencia(sd)}"
+            ) from error
         self._stream.start()
         return self
+
+    def _sugerencia(self, sd):
+        try:
+            info = sd.query_devices(self.dispositivo, "input")
+        except Exception:
+            return ("Revisa los dispositivos disponibles con: "
+                    "python3 detector_notas.py --lista")
+        return (f"El dispositivo '{info['name']}' declara "
+                f"{info['default_samplerate']:.0f} Hz y "
+                f"{info['max_input_channels']} canal(es) de entrada.\n"
+                f"Prueba:  python3 detector_notas.py "
+                f"--sr {info['default_samplerate']:.0f}")
 
     def __exit__(self, *_):
         if self._stream is not None:

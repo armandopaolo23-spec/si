@@ -12,12 +12,18 @@ Estado: **fase 1 (motor de audio) terminada**. Faltan las fases 2 a 6
 
 ## Instalacion
 
+Ubuntu 23.04 y posteriores no dejan instalar con pip en el Python del
+sistema (PEP 668), asi que conviene un entorno virtual:
+
 ```bash
-sudo apt install libportaudio2
-pip install numpy sounddevice pytest
+sudo apt install libportaudio2 python3-venv
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-`pygame` se agrega en la fase 4.
+`pygame` se agrega en la fase 4. Cada vez que abras una terminal nueva hay
+que volver a hacer `source .venv/bin/activate`.
 
 ## Como verificar la fase 1
 
@@ -34,6 +40,9 @@ Con la guitarra, una linea por cada pulsacion detectada:
 python3 detector_notas.py --lista        # ver dispositivos de entrada
 python3 detector_notas.py                # modo ataques
 ```
+
+Si falla al abrir el dispositivo, el error dice a que frecuencia lo declara
+el sistema; en ese caso `python3 detector_notas.py --sr 48000`.
 
 ```
    t (s)  nota            Hz    cents   conf    nivel
