@@ -92,6 +92,21 @@ class Captura:
             self._stream = None
         return False
 
+    def vaciar(self):
+        """Descarta el audio en cola y devuelve cuantos bloques habia.
+
+        Hace falta antes de empezar a medir: mientras el programa espera en un
+        prompt la cola sigue llenandose, y ese audio viejo no corresponde a lo
+        que se quiere medir.
+        """
+        descartados = 0
+        while True:
+            try:
+                self._cola.get_nowait()
+            except queue.Empty:
+                return descartados
+            descartados += 1
+
     def bloques(self, espera=1.0):
         """Generador de bloques mono (float32). Bloquea hasta que llegue audio."""
         while True:
