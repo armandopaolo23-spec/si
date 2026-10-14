@@ -4,8 +4,10 @@ import pytest
 
 from audio.notas import CUERDAS_ESTANDAR, nombre_a_midi
 from juego.geometria import (MARGEN_SALIDA_S, VENTANA_VISTA_S,
-                             carril_de_nota, carriles_de_evento, en_vista,
-                             indice_carril, posicion_relativa)
+                             carril_de_nota, carriles_de_evento,
+                             digitacion_de_acorde, digitacion_de_nota,
+                             en_vista, indice_carril, posicion_relativa,
+                             tablatura)
 from nucleo.pista import desde_dict
 
 
@@ -91,3 +93,67 @@ def test_la_sexta_cuerda_va_a_la_izquierda():
     assert indice_carril(6) == 0
     assert indice_carril(1) == 5
     assert [indice_carril(c) for c in (6, 5, 4, 3, 2, 1)] == [0, 1, 2, 3, 4, 5]
+
+
+# ----------------------------------------------------------- digitacion
+
+@pytest.mark.parametrize("nombre, cuerda, traste", [
+    ("E2", 6, 0), ("A2", 5, 0), ("D3", 4, 0),
+    ("G3", 3, 0), ("B3", 2, 0), ("E4", 1, 0),
+    ("C3", 5, 3), ("E3", 4, 2), ("C4", 2, 1), ("G4", 1, 3),
+])
+def test_digitacion_de_nota_sin_sugerencia(nombre, cuerda, traste):
+    midi = nombre_a_midi(nombre)
+    assert digitacion_de_nota(midi, CUERDAS_ESTANDAR) == (cuerda, traste)
+
+
+def test_digitacion_respeta_la_cuerda_que_indique_la_pista():
+    """E4 en la 2a cuerda es el traste 5, no la 1a al aire."""
+    midi = nombre_a_midi("E4")
+    assert digitacion_de_nota(midi, CUERDAS_ESTANDAR, cuerda=2) == (2, 5)
+    assert digitacion_de_nota(midi, CUERDAS_ESTANDAR, cuerda=1) == (1, 0)
+
+
+def test_digitacion_respeta_cuerda_y_traste_juntos():
+    midi = nombre_a_midi("E4")
+    assert digitacion_de_nota(midi, CUERDAS_ESTANDAR, cuerda=2,
+                              traste=5) == (2, 5)
+
+
+def test_una_nota_inalcanzable_no_tiene_digitacion():
+    assert digitacion_de_nota(24, CUERDAS_ESTANDAR) is None
+    # Y en una cuerda que no llega tampoco.
+    assert digitacion_de_nota(nombre_a_midi("E2"), CUERDAS_ESTANDAR,
+                              cuerda=1) is None
+
+
+@pytest.mark.parametrize("nombre, notas, esperado", [
+    ("Em", [40, 47, 52, 55, 59, 64], "022000"),
+    ("Am", [45, 52, 57, 60, 64], "x02210"),
+    ("C", [48, 52, 55, 60, 64], "x32010"),
+    ("G", [43, 47, 50, 55, 59, 67], "320003"),
+    ("D", [50, 57, 62, 66], "xx0232"),
+    ("A", [45, 52, 57, 61, 64], "x02220"),
+    ("E", [40, 47, 52, 56, 59, 64], "022100"),
+])
+def test_digitacion_de_acordes_abiertos(nombre, notas, esperado):
+    """Asignar cada nota a la cuerda libre de traste mas bajo reproduce las
+    digitaciones de siempre. Si alguna sale distinta, la heuristica cambio."""
+    assert tablatura(digitacion_de_acorde(notas, CUERDAS_ESTANDAR)) == esperado
+
+
+def test_cada_cuerda_se_usa_una_sola_vez():
+    trastes = digitacion_de_acorde([40, 47, 52, 55, 59, 64], CUERDAS_ESTANDAR)
+    assert len(trastes) == 6
+    assert all(t is not None for t in trastes)
+
+
+def test_la_tablatura_marca_con_x_las_cuerdas_que_no_suenan():
+    assert tablatura((None, 0, 2, 2, 1, 0)) == "x02210"
+    assert tablatura((None, None, 0, 2, 3, 2)) == "xx0232"
+
+
+def test_la_tablatura_usa_letras_pasado_el_traste_9():
+    """Como en cualquier cancionero: 10 es 'a', para que cada cuerda ocupe
+    un solo caracter y la digitacion se lea alineada."""
+    assert tablatura((10, 11, 12, None, None, None)) == "abcxxx"

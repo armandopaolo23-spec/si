@@ -171,3 +171,58 @@ def test_los_resultados_sugieren_el_desfase(pantalla, pistas):
     assert sesion.desfase_sugerido_ms == 73
     Renderizador(pantalla).dibujar(sesion)
     assert pinto_algo(pantalla)
+
+
+def test_por_defecto_la_nota_dice_cuerda_y_traste(pantalla, pistas):
+    """Es lo que pidio quien lo usa: "E2" no dice que hacer con las manos."""
+    from juego.render import ETIQUETA_DIGITACION
+    renderizador = Renderizador(pantalla, etiquetas=ETIQUETA_DIGITACION)
+    sesion = Sesion([pistas[0]], ventana_vista_s=3.0)
+    sesion.empezar(0.0)
+    sesion.avanzar(3.0)
+    vista = next(n for n in sesion.notas_en_vista() if n.indice == 0)
+    # El E2 de la pista 1 va en la 6a al aire.
+    assert vista.evento.cuerda == 6 and vista.evento.traste == 0
+    renderizador.dibujar(sesion)
+    assert pinto_algo(pantalla)
+
+
+def test_con_etiquetas_notas_vuelve_el_nombre(pantalla, pistas):
+    from juego.render import ETIQUETA_NOTAS
+    renderizador = Renderizador(pantalla, etiquetas=ETIQUETA_NOTAS)
+    sesion = Sesion([pistas[0]], ventana_vista_s=3.0)
+    sesion.empezar(0.0)
+    sesion.avanzar(3.0)
+    vista = next(n for n in sesion.notas_en_vista() if n.indice == 0)
+    assert renderizador._etiqueta(vista, pistas[0].afinacion) == "E2"
+
+
+def test_el_acorde_muestra_su_digitacion(pantalla, pistas):
+    from juego.render import ETIQUETA_DIGITACION, ETIQUETA_NOTAS
+    sesion = Sesion([pistas[2]], ventana_vista_s=3.0)
+    sesion.empezar(0.0)
+    sesion.avanzar(3.0)
+    vista = next(n for n in sesion.notas_en_vista() if n.indice == 0)
+    assert vista.evento.tipo == "acorde"
+
+    con_digitacion = Renderizador(pantalla, etiquetas=ETIQUETA_DIGITACION)
+    assert con_digitacion._etiqueta(vista, pistas[2].afinacion) == "Em  022000"
+    solo_nombre = Renderizador(pantalla, etiquetas=ETIQUETA_NOTAS)
+    assert solo_nombre._etiqueta(vista, pistas[2].afinacion) == "Em"
+
+
+def test_una_nota_sin_digitacion_posible_cae_en_el_nombre(pantalla):
+    """Con una afinacion rara puede no haber cuerda que la alcance."""
+    from juego.render import ETIQUETA_DIGITACION
+    from nucleo.pista import desde_dict
+    pista = desde_dict({"titulo": "x", "bpm": 60,
+                        "afinacion": ["E4", "E4", "E4", "E4", "E4", "E4"],
+                        "eventos": [{"t": 0.0, "dur": 1.0, "tipo": "nota",
+                                     "midi": 40}]})
+    sesion = Sesion([pista], ventana_vista_s=3.0)
+    sesion.empezar(0.0)
+    sesion.avanzar(3.0)
+    vista = next(n for n in sesion.notas_en_vista() if n.indice == 0)
+    renderizador = Renderizador(pantalla, etiquetas=ETIQUETA_DIGITACION)
+    assert renderizador._etiqueta(vista, pista.afinacion) == "E2"
+    renderizador.dibujar(sesion)

@@ -46,7 +46,7 @@ Las pruebas no usan microfono ni audio grabado: todas las señales se
 sintetizan dentro de `tests/sintesis.py`.
 
 ```bash
-python3 -m pytest tests/ -q          # 321 pruebas, ~8 s
+python3 -m pytest tests/ -q          # 354 pruebas, ~8 s
 ```
 
 Con la guitarra, una linea por cada pulsacion detectada:
@@ -164,6 +164,7 @@ python3 tocar.py                    # todas las pistas de pistas/
 python3 tocar.py --umbral 0.004     # el valor que sugiera --calibrar
 python3 tocar.py --vista 2.0        # menos segundos en pantalla
 python3 tocar.py --desfase-ms 73    # si te adelantas sistematicamente
+python3 tocar.py --etiquetas notas  # nombres de nota en vez de cuerda/traste
 ```
 
 Si la pantalla de resultados dice que te adelantas o te atrasas siempre lo
@@ -181,6 +182,18 @@ mide lo mismo que una nota a proposito: con solo una linea no se sabia si el
 objetivo era el borde de la nota o su centro, y como el highway baja a unos
 139 px/s, el borde de abajo llega 94 ms antes que el centro. Eso se medio en
 la practica como un adelanto sistematico de 73 ms.
+
+Cada nota que baja dice **que cuerda y que traste** tocar, no el nombre de la
+nota: "E2" no dice que hacer con las manos y "6a 0" si. El traste va grande y
+la cuerda chica, porque en que carril esta la nota ya indica la cuerda pero el
+traste no se deduce de ningun lado. Con `--etiquetas notas` se muestran los
+nombres, para cuando ya se conocen.
+
+Los acordes muestran su digitacion completa en notacion de cancionero:
+`Em 022000`, `Am x02210`, `C x32010`, `G 320003`. Se calcula asignando cada
+nota a la cuerda libre que la alcance con el traste mas bajo, y con los
+acordes abiertos basicos eso reproduce exactamente las digitaciones de
+siempre.
 
 Las notas bajan por seis carriles, uno por cuerda, con la 6a a la izquierda
 como en una tablatura mirada de frente. Los acordes ocupan los carriles de

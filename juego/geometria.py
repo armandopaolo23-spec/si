@@ -1,4 +1,4 @@
-"""Disposicion del highway: en que carril cae cada nota y a que altura.
+"""Como se muestra cada nota en la guitarra: carril, altura y digitacion.
 
 Geometria pura, sin pygame: se prueba sin abrir ventana. El render toma de
 aqui las posiciones y solo dibuja.
@@ -42,6 +42,58 @@ def carril_de_nota(midi, afinacion, cuerda=None):
         if mejor_traste is None or traste < mejor_traste:
             mejor, mejor_traste = CUERDAS - indice, traste
     return mejor
+
+
+def digitacion_de_nota(midi, afinacion, cuerda=None, traste=None):
+    """Devuelve (cuerda, traste) para tocar una nota, o None si no se alcanza.
+
+    Respeta lo que indique la pista. Si falta el traste pero hay cuerda, lo
+    calcula sobre esa cuerda; si no hay nada, elige la posicion del traste
+    mas bajo, igual que carril_de_nota.
+    """
+    if cuerda is not None:
+        if traste is None:
+            traste = midi - afinacion[CUERDAS - cuerda]
+        if not 0 <= traste <= TRASTE_MAXIMO:
+            return None
+        return cuerda, traste
+    elegida = carril_de_nota(midi, afinacion)
+    if elegida is None:
+        return None
+    return elegida, midi - afinacion[CUERDAS - elegida]
+
+
+def digitacion_de_acorde(notas, afinacion):
+    """Traste por cuerda para un acorde, de la 6a a la 1a. None = no se toca.
+
+    Cada nota se asigna a la cuerda libre que la alcance con el traste mas
+    bajo, recorriendo de la mas grave a la mas aguda. Con los acordes
+    abiertos basicos esto reproduce las digitaciones de siempre: Em sale
+    022000, Am sale x02210, C sale x32010 y G sale 320003.
+    """
+    trastes = [None] * CUERDAS          # indice 0 = 6a cuerda
+    for midi in sorted(notas):
+        candidatas = []
+        for indice, nota_cuerda in enumerate(afinacion):
+            if trastes[indice] is not None:
+                continue
+            traste = midi - nota_cuerda
+            if 0 <= traste <= TRASTE_MAXIMO:
+                candidatas.append((traste, indice))
+        if candidatas:
+            traste, indice = min(candidatas)
+            trastes[indice] = traste
+    return tuple(trastes)
+
+
+def tablatura(trastes):
+    """Texto de una digitacion de acorde: 022000, x32010.
+
+    Las cuerdas que no suenan van con x, como en cualquier cancionero.
+    """
+    return "".join("x" if t is None else
+                   (str(t) if t < 10 else chr(ord("a") + t - 10))
+                   for t in trastes)
 
 
 def carriles_de_evento(evento, afinacion):

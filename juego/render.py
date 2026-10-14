@@ -7,7 +7,8 @@ dibuja. Por eso la logica del juego se puede probar sin abrir ventana.
 import pygame
 
 from audio.notas import nombre_midi
-from juego.geometria import indice_carril, posicion_relativa
+from juego.geometria import (digitacion_de_acorde, digitacion_de_nota,
+                             indice_carril, posicion_relativa, tablatura)
 from juego.sesion import (ACERTADA, FALLADA, JUGANDO, MENU, RESULTADOS)
 from nucleo.evaluador import ACIERTO, EXTRA, FALLO
 from nucleo.pista import CUERDAS
@@ -48,14 +49,23 @@ MARGEN_CAJA = 4
 ALTO_CAJA = ALTO_NOTA + 2 * MARGEN_CAJA
 
 
+# Que se escribe sobre cada nota que baja.
+ETIQUETA_DIGITACION = "digitacion"   # "6a 0": cuerda y traste
+ETIQUETA_NOTAS = "notas"             # "E2": nombre de la nota
+ETIQUETAS = (ETIQUETA_DIGITACION, ETIQUETA_NOTAS)
+
+
 class Renderizador:
-    def __init__(self, pantalla):
+    def __init__(self, pantalla, etiquetas=ETIQUETA_DIGITACION):
+        self.etiquetas = etiquetas
         self.pantalla = pantalla
         self.ancho, self.alto = pantalla.get_size()
         self.fuente_titulo = pygame.font.Font(None, 44)
         self.fuente = pygame.font.Font(None, 28)
         self.fuente_chica = pygame.font.Font(None, 22)
         self.fuente_nota = pygame.font.Font(None, 20)
+        self.fuente_traste = pygame.font.Font(None, 28)
+        self.fuente_cuerda = pygame.font.Font(None, 18)
         # Lo pone la aplicacion cuando hay algo que contar del sistema, por
         # ejemplo que el microfono dejo de entregar audio.
         self.aviso_sistema = None
@@ -137,7 +147,28 @@ class Renderizador:
             self._centrado(etiqueta, x, self.y_linea + 22, self.fuente_chica,
                            _oscurecer(color, 0.75))
 
+    def _etiqueta(self, vista, afinacion):
+        """Que decir sobre la nota que baja.
+
+        Por defecto la digitacion y no el nombre: para quien recien empieza,
+        "6a 0" es una instruccion y "E2" no dice que hacer con las manos.
+        """
+        evento = vista.evento
+        if evento.tipo == "acorde":
+            if self.etiquetas == ETIQUETA_NOTAS:
+                return evento.nombre
+            return f"{evento.nombre}  {tablatura(digitacion_de_acorde(evento.notas, afinacion))}"
+        if self.etiquetas == ETIQUETA_NOTAS:
+            return nombre_midi(evento.midi)
+        digitacion = digitacion_de_nota(evento.midi, afinacion, evento.cuerda,
+                                        evento.traste)
+        if digitacion is None:
+            return nombre_midi(evento.midi)
+        cuerda, traste = digitacion
+        return f"{cuerda}a  {traste}"
+
     def _notas(self, sesion):
+        afinacion = sesion.pista_actual.afinacion
         for vista in sesion.notas_en_vista():
             if not vista.carriles:
                 continue
@@ -159,9 +190,36 @@ class Renderizador:
             pygame.draw.rect(self.pantalla, relleno, rect, border_radius=6)
             pygame.draw.rect(self.pantalla, borde, rect, width=2,
                              border_radius=6)
-            etiqueta = (vista.evento.nombre if vista.evento.tipo == "acorde"
-                        else nombre_midi(vista.evento.midi))
-            self._en_el_centro(etiqueta, rect.center, self.fuente_nota)
+            digitacion = (None if vista.evento.tipo == "acorde"
+                          or self.etiquetas == ETIQUETA_NOTAS
+                          else digitacion_de_nota(vista.evento.midi, afinacion,
+                                                  vista.evento.cuerda,
+                                                  vista.evento.traste))
+            if digitacion is None:
+                self._en_el_centro(self._etiqueta(vista, afinacion),
+                                   rect.center, self.fuente_nota)
+            else:
+                self._digitacion(rect, *digitacion)
+
+    def _digitacion(self, rect, cuerda, traste):
+        """Escribe la cuerda chica y el traste grande, centrados en la nota.
+
+        El traste va destacado porque es la instruccion: en que carril esta
+        la nota ya dice la cuerda, pero el traste no se deduce de nada.
+        """
+        texto_cuerda = self.fuente_cuerda.render(f"{cuerda}a", True, TEXTO_TENUE)
+        texto_traste = self.fuente_traste.render(str(traste), True, TEXTO)
+        separacion = 5
+        total = texto_cuerda.get_width() + separacion + texto_traste.get_width()
+        x = rect.centerx - total / 2
+        self.pantalla.blit(
+            texto_cuerda,
+            texto_cuerda.get_rect(midleft=(x, rect.centery + 1)))
+        self.pantalla.blit(
+            texto_traste,
+            texto_traste.get_rect(
+                midleft=(x + texto_cuerda.get_width() + separacion,
+                         rect.centery)))
 
     def _linea_de_golpe(self):
         """Caja de acierto: la nota la llena justo cuando hay que tocarla."""

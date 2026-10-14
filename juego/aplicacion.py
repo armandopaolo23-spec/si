@@ -20,7 +20,7 @@ import pygame
 
 from audio.analizador import SR, Analizador
 from audio.captura import BLOQUE, Captura
-from juego.render import ALTO, ANCHO, Renderizador
+from juego.render import ALTO, ANCHO, ETIQUETA_DIGITACION, Renderizador
 from juego.sesion import JUGANDO, MENU, RESULTADOS, Sesion
 
 FPS = 60
@@ -51,7 +51,8 @@ def _manejar_teclado(evento, sesion, analizador):
 
 
 def ejecutar(pistas, dispositivo=None, sr=SR, umbral_ruido=None,
-             tolerancias=None, ventana_vista_s=None, desfase_s=0.0):
+             tolerancias=None, ventana_vista_s=None, desfase_s=0.0,
+             etiquetas=ETIQUETA_DIGITACION):
     opciones = {} if umbral_ruido is None else {"umbral_ruido": umbral_ruido}
     analizador = Analizador(sr=sr, **opciones)
 
@@ -66,7 +67,7 @@ def ejecutar(pistas, dispositivo=None, sr=SR, umbral_ruido=None,
     pantalla = pygame.display.set_mode((ANCHO, ALTO))
     pygame.display.set_caption("Tutor de guitarra")
     reloj = pygame.time.Clock()
-    renderizador = Renderizador(pantalla)
+    renderizador = Renderizador(pantalla, etiquetas=etiquetas)
 
     try:
         with Captura(sr=sr, bloque=BLOQUE, dispositivo=dispositivo) as captura:

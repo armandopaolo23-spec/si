@@ -73,6 +73,10 @@ def main():
                     help="ventana temporal en milisegundos")
     ap.add_argument("--tolerancia-cents", type=float, default=None,
                     help="ventana de afinacion en cents")
+    ap.add_argument("--etiquetas", choices=("digitacion", "notas"),
+                    default="digitacion",
+                    help="que escribir sobre cada nota: la cuerda y el "
+                         "traste (por defecto) o el nombre de la nota")
     ap.add_argument("--desfase-ms", type=float, default=0.0,
                     help="cuantos ms te adelantas de forma sistematica; "
                          "la pantalla de resultados sugiere el valor")
@@ -102,7 +106,7 @@ def main():
             pistas, dispositivo=args.dispositivo, sr=args.sr,
             umbral_ruido=args.umbral, tolerancias=tolerancias,
             ventana_vista_s=args.vista,
-            desfase_s=args.desfase_ms / 1000.0)
+            desfase_s=args.desfase_ms / 1000.0, etiquetas=args.etiquetas)
     except RuntimeError as error:
         print(error, file=sys.stderr)
         sys.exit(1)
