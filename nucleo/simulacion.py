@@ -10,7 +10,11 @@ Es logica pura y determinista: la unica fuente de azar es la semilla.
 import random
 from dataclasses import dataclass
 
-from audio.notas import midi_a_hz
+import numpy as np
+
+from audio.croma import MIDI_MAXIMO, MIDI_MINIMO, NOTAS
+from audio.notas import hz_a_midi, midi_a_hz
+from nucleo.acordes import ARMONICOS_PLANTILLA, DECAIMIENTO_PLANTILLA
 from nucleo.evaluador import RETARDO_MOTOR_S, Deteccion
 
 
@@ -25,6 +29,7 @@ class Perfil:
     jitter_cents: float = 0.0
     probabilidad_salto: float = 0.0   # notas que no se tocan
     notas_de_mas: int = 0             # detecciones sin evento que las pida
+    probabilidad_cuerda_muda: float = 0.0  # cuerdas de un acorde que no suenan
 
 
 PERFILES = {
@@ -36,11 +41,33 @@ PERFILES = {
     # El jitter va a proposito por encima de las tolerancias por defecto
     # (120 ms y 35 cents) para que algunas notas caigan afuera y se vea que
     # las ventanas hacen algo.
-    "desprolijo": Perfil("jitter de 160 ms y 45 cents, con notas salteadas "
-                         "y de mas",
+    "desprolijo": Perfil("jitter de 160 ms y 45 cents, con notas salteadas, "
+                         "de mas y cuerdas mudas en los acordes",
                          jitter_s=0.160, jitter_cents=45.0,
-                         probabilidad_salto=0.15, notas_de_mas=3),
+                         probabilidad_salto=0.15, notas_de_mas=3,
+                         probabilidad_cuerda_muda=0.35),
 }
+
+
+PISO_RUIDO = 1.0        # energia de fondo en los semitonos que no suenan
+ENERGIA_NOTA = 20.0     # energia de una nota que si suena
+
+
+def energias_de(midis, armonicos=ARMONICOS_PLANTILLA,
+                decaimiento=DECAIMIENTO_PLANTILLA):
+    """Energia por semitono que dejaria ese conjunto de notas sonando.
+
+    Incluye los armonicos porque son los que el microfono tambien capta, y
+    sin ellos el croma no se parece a nada de lo que mide audio/croma.py.
+    """
+    energias = np.full(NOTAS, PISO_RUIDO)
+    for midi in midis:
+        for orden in range(1, armonicos + 1):
+            nota = int(round(hz_a_midi(midi_a_hz(midi) * orden)))
+            if MIDI_MINIMO <= nota <= MIDI_MAXIMO:
+                energias[nota - MIDI_MINIMO] += (
+                    ENERGIA_NOTA * decaimiento ** (orden - 1))
+    return energias
 
 
 def generar_detecciones(pista, perfil, semilla=1):
@@ -50,15 +77,20 @@ def generar_detecciones(pista, perfil, semilla=1):
     for evento in pista.eventos:
         if azar.random() < perfil.probabilidad_salto:
             continue
-        # De un acorde suena una sola lectura de pitch: la que gane en
-        # periodicidad. Se elige una al azar entre sus notas.
-        midi = azar.choice(evento.midis)
         t = evento.t + perfil.desfase_s + azar.uniform(-perfil.jitter_s,
                                                        perfil.jitter_s)
+        if evento.tipo == "acorde":
+            # Un rasgueo no entrega pitch: lo que lo describe es la energia
+            # por semitono. Alguna cuerda puede quedar muda si se pisa mal.
+            suenan = [midi for midi in evento.midis
+                      if azar.random() >= perfil.probabilidad_cuerda_muda]
+            detecciones.append(Deteccion(t=max(0.0, t),
+                                         energias=energias_de(suenan)))
+            continue
         cents = perfil.desviacion_cents + azar.uniform(-perfil.jitter_cents,
                                                        perfil.jitter_cents)
         detecciones.append(Deteccion(t=max(0.0, t),
-                                     f0=midi_a_hz(midi) * 2.0 ** (cents / 1200.0)))
+                                     f0=midi_a_hz(evento.midi) * 2.0 ** (cents / 1200.0)))
 
     for _ in range(perfil.notas_de_mas):
         detecciones.append(Deteccion(

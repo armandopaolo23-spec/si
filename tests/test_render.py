@@ -21,9 +21,10 @@ from nucleo.pista import cargar                          # noqa: E402
 
 
 class AtaqueFalso:
-    def __init__(self, t, f0):
+    def __init__(self, t, f0=None, energias=None):
         self.t = t
         self.f0 = f0
+        self.energias = energias
 
 
 @pytest.fixture(scope="module")

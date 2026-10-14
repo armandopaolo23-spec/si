@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from audio.croma import MARCO_ACORDE, MedidorArmonico
 from audio.notas import Nota, hz_a_nota
 from audio.onset import DetectorOnset
 from audio.yin import FMAX, FMIN, yin
@@ -42,6 +43,11 @@ CONF_MINIMA = 0.65      # confianza YIN por debajo de la cual se ignora la lectu
 SALTOS_ESPERA = 3       # saltos a esperar tras el ataque antes de medir pitch
 SALTOS_PITCH = 3        # lecturas de pitch a promediar (mediana)
 SALTOS_VIDA = 9         # si en tantos saltos no hubo pitch valido, se descarta
+# Saltos que hay que esperar para medir el acorde. La ventana armonica son
+# 8192 muestras y tiene que arrancar en el ataque, asi que el ataque se emite
+# recien cuando ya sonaron. Retrasa el aviso unos 70 ms respecto de tener solo
+# el pitch, y es el precio de poder distinguir dos acordes vecinos.
+SALTOS_ACORDE = MARCO_ACORDE // SALTO
 # Con 0.08 s aparecian dobles disparos reales de la misma pulsacion separados
 # 0.081 y 0.093 s. El techo lo pone la velocidad de ejecucion que hay que
 # admitir: semicorcheas a 120 bpm son 0.125 s, y como el analisis avanza en
@@ -58,15 +64,22 @@ RETARDO_ONSET_S = 0.014
 
 @dataclass(frozen=True)
 class Ataque:
-    """Un golpe detectado, ya resuelto a nota."""
+    """Un golpe detectado.
+
+    `nota` y `f0` quedan en None cuando YIN no encontro un pitch claro, que es
+    lo normal en un rasgueo: un acorde no es periodico. En ese caso lo que
+    describe el golpe es `energias`, y quien lo interprete son las plantillas
+    de nucleo/acordes.py.
+    """
 
     t: float            # segundos desde el inicio del stream, instante del golpe
-    nota: Nota
-    f0: float
-    confianza: float
     nivel: float        # RMS de la ventana en el momento del ataque
     flujo: float        # flujo espectral que disparo el ataque
     umbral: float       # umbral que ese flujo tuvo que superar
+    nota: Nota = None
+    f0: float = None
+    confianza: float = 0.0
+    energias: object = None   # energia por semitono, o None si no alcanzo
 
 
 @dataclass(frozen=True)
@@ -100,7 +113,8 @@ class Analizador:
     def __init__(self, sr=SR, marco=MARCO, salto=SALTO,
                  umbral_ruido=UMBRAL_RUIDO, conf_minima=CONF_MINIMA,
                  saltos_espera=SALTOS_ESPERA, saltos_pitch=SALTOS_PITCH,
-                 saltos_vida=SALTOS_VIDA, refractario_s=REFRACTARIO_S,
+                 saltos_vida=SALTOS_VIDA, saltos_acorde=SALTOS_ACORDE,
+                 refractario_s=REFRACTARIO_S,
                  retardo_onset_s=RETARDO_ONSET_S, fmin=FMIN, fmax=FMAX):
         self.sr = sr
         self.marco = marco
@@ -110,13 +124,17 @@ class Analizador:
         self.saltos_espera = saltos_espera
         self.saltos_pitch = saltos_pitch
         self.saltos_vida = saltos_vida
+        self.saltos_acorde = saltos_acorde
         self.refractario_s = refractario_s
         self.retardo_onset_s = retardo_onset_s
         self.fmin = fmin
         self.fmax = fmax
 
         self._onset = DetectorOnset(sr)
+        self._medidor = MedidorArmonico(sr)
         self._buffer = np.zeros(marco, dtype=np.float64)
+        # Buffer aparte y mas largo para el analisis armonico del acorde.
+        self._buffer_acorde = np.zeros(self._medidor.marco, dtype=np.float64)
         self._cola = np.zeros(0, dtype=np.float64)
         self._muestras = 0
         self._pendiente = None
@@ -143,6 +161,8 @@ class Analizador:
             salto, self._cola = self._cola[: self.salto], self._cola[self.salto:]
             self._buffer = np.roll(self._buffer, -self.salto)
             self._buffer[-self.salto:] = salto
+            self._buffer_acorde = np.roll(self._buffer_acorde, -self.salto)
+            self._buffer_acorde[-self.salto:] = salto
             self._muestras += self.salto
             ataques.extend(self._analizar_ventana())
         return ataques
@@ -197,24 +217,40 @@ class Analizador:
                 pendiente.espera -= 1
             if pendiente.espera == 0 and valida:
                 pendiente.lecturas.append((f0, confianza))
-            if (len(pendiente.lecturas) >= self.saltos_pitch
-                    or pendiente.vida >= self.saltos_vida):
+            # Se espera siempre a que la ventana armonica este llena: hasta
+            # entonces no se puede saber si fue una nota o un rasgueo.
+            if pendiente.vida >= self.saltos_acorde:
                 ataques.extend(self._cerrar_pendiente())
 
         return ataques
 
     def _cerrar_pendiente(self):
-        """Emite el ataque pendiente, o lo descarta si nunca dio pitch."""
+        """Emite el ataque pendiente con lo que haya podido medir.
+
+        Un golpe sirve si dio pitch -una nota suelta- o si alcanzo a llenar
+        la ventana armonica -un rasgueo-. Solo se descarta cuando no dio
+        ninguna de las dos cosas.
+        """
         pendiente, self._pendiente = self._pendiente, None
         if pendiente is None:
             return []
-        if not pendiente.lecturas:
+
+        energias = None
+        if pendiente.vida >= self.saltos_acorde:
+            energias = self._medidor.energia_por_nota(self._buffer_acorde)
+
+        f0 = confianza = nota = None
+        if pendiente.lecturas:
+            # Mediana y no promedio: un solo salto de octava en las lecturas
+            # no mueve la mediana, pero si arruinaria el promedio.
+            f0 = float(np.median([f for f, _ in pendiente.lecturas]))
+            confianza = float(np.median([c for _, c in pendiente.lecturas]))
+            nota = hz_a_nota(f0)
+
+        if f0 is None and energias is None:
             self.descartados += 1
             return []
-        # Mediana y no promedio: un solo salto de octava en las lecturas no
-        # mueve la mediana, pero si arruinaria el promedio.
-        f0 = float(np.median([f for f, _ in pendiente.lecturas]))
-        confianza = float(np.median([c for _, c in pendiente.lecturas]))
-        return [Ataque(t=pendiente.t, nota=hz_a_nota(f0), f0=f0,
-                       confianza=confianza, nivel=pendiente.nivel,
-                       flujo=pendiente.flujo, umbral=pendiente.umbral)]
+        return [Ataque(t=pendiente.t, nivel=pendiente.nivel,
+                       flujo=pendiente.flujo, umbral=pendiente.umbral,
+                       nota=nota, f0=f0, confianza=confianza or 0.0,
+                       energias=energias)]

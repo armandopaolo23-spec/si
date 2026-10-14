@@ -21,9 +21,10 @@ from dataclasses import dataclass
 
 from audio.notas import hz_a_nota
 from juego.geometria import (MARGEN_SALIDA_S, VENTANA_VISTA_S,
-                             carril_de_nota, carriles_de_evento, en_vista)
-from nucleo.evaluador import (ACIERTO, AFINACION, EXTRA, FALLO, Deteccion,
-                              Evaluador, Tolerancias)
+                             asignacion_de_acorde, carril_de_nota,
+                             carriles_de_evento, en_vista)
+from nucleo.evaluador import (ACIERTO, ACORDE_INCOMPLETO, AFINACION, EXTRA,
+                              FALLO, Deteccion, Evaluador, Tolerancias)
 from nucleo.puntaje import puntos_por_acierto
 
 MENU = "menu"
@@ -123,7 +124,8 @@ class Sesion:
             # Lo que suena durante la entrada, antes de la primera nota, no
             # se evalua: seria afinar o acomodarse, no tocar la pista.
             if t >= -self.tolerancias.temporal_s:
-                detecciones.append(Deteccion(t=t, f0=ataque.f0))
+                detecciones.append(Deteccion(t=t, f0=ataque.f0,
+                                             energias=ataque.energias))
 
         resultados = self._evaluador.avanzar(self.t_pista, detecciones)
         for resultado in resultados:
@@ -212,7 +214,25 @@ class Sesion:
         else:
             self._avisar(resultado, self._texto_extra(resultado))
 
+    def _cuerdas_faltantes(self, resultado):
+        """Nombres de las cuerdas que no sonaron en un acorde, de grave a aguda."""
+        if resultado.indice is None or not resultado.faltantes:
+            return ()
+        evento = self.pista_actual.eventos[resultado.indice]
+        if evento.tipo != "acorde":
+            return ()
+        asignacion = asignacion_de_acorde(evento.notas,
+                                          self.pista_actual.afinacion)
+        cuerdas = sorted(asignacion[midi][0] for midi in resultado.faltantes
+                         if midi in asignacion)
+        return tuple(f"{cuerda}a" for cuerda in reversed(cuerdas))
+
     def _texto_acierto(self, resultado):
+        faltantes = self._cuerdas_faltantes(resultado)
+        if faltantes:
+            return "falta " + " ".join(faltantes)
+        if resultado.error_cents is None:
+            return "PERFECTO"
         ms = 1000 * resultado.error_s
         if abs(ms) <= MS_PERFECTO and abs(resultado.error_cents) <= CENTS_PERFECTO:
             return "PERFECTO"
@@ -221,9 +241,17 @@ class Sesion:
         return f"{resultado.error_cents:+.0f} cents"
 
     def _texto_extra(self, resultado):
+        if resultado.motivo == ACORDE_INCOMPLETO:
+            faltantes = self._cuerdas_faltantes(resultado)
+            if faltantes:
+                return "falta " + " ".join(faltantes)
+            return (f"sono {resultado.nombre_oido}"
+                    if resultado.nombre_oido else "acorde incompleto")
         if resultado.motivo == AFINACION:
             direccion = "ALTO" if resultado.error_cents > 0 else "BAJO"
             return f"{abs(resultado.error_cents):.0f}c {direccion}"
+        if not resultado.deteccion.f0:
+            return "rasgueo de mas"
         return f"{hz_a_nota(resultado.deteccion.f0).nombre} de mas"
 
     def _carril_de_resultado(self, resultado):
@@ -233,7 +261,7 @@ class Sesion:
                 self.pista_actual.eventos[resultado.indice], afinacion)
             if carriles:
                 return carriles[0]
-        if resultado.deteccion is not None:
+        if resultado.deteccion is not None and resultado.deteccion.f0:
             # Una nota de mas se muestra en el carril de la cuerda que la
             # habria producido: dice de paso que cuerda cree que se toco.
             carril = carril_de_nota(hz_a_nota(resultado.deteccion.f0).midi,

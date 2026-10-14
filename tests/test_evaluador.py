@@ -3,10 +3,11 @@
 import pytest
 
 from audio.notas import midi_a_hz
-from nucleo.evaluador import (ACIERTO, AFINACION, EXTRA, FALLO,
-                              RETARDO_MOTOR_S, SIN_EVENTO, Deteccion,
+from nucleo.evaluador import (ACIERTO, ACORDE_INCOMPLETO, AFINACION, EXTRA,
+                              FALLO, RETARDO_MOTOR_S, SIN_EVENTO, Deteccion,
                               Evaluador, Tolerancias)
 from nucleo.pista import desde_dict
+from nucleo.simulacion import energias_de
 
 # Instante bien posterior a cualquier ventana de estas pruebas: sirve para
 # forzar el cierre de todo lo que quedara pendiente.
@@ -165,21 +166,95 @@ def test_un_extra_no_corta_la_racha():
 
 # ------------------------------------------------------------------- acordes
 
-def test_un_acorde_se_acierta_con_cualquiera_de_sus_notas():
-    """Con un detector monofonico, una rasgueada da una sola lectura de pitch.
+EM = [40, 47, 52, 55, 59, 64]
+AM = [45, 52, 57, 60, 64]
+C = [48, 52, 55, 60, 64]
 
-    Exigir todas las notas del acorde necesita el croma de la fase 5.
+
+def rasgueo(t, midis):
+    """Deteccion de un rasgueo: energia por semitono, sin pitch."""
+    return Deteccion(t=t, energias=energias_de(midis))
+
+
+def test_un_rasgueo_del_acorde_pedido_acierta():
+    ev = Evaluador(pista_de(acorde(1.0, EM, nombre="Em")))
+    resultados = ev.avanzar(1.0, [rasgueo(1.0, EM)])
+    assert tipos(resultados) == [ACIERTO]
+    assert resultados[0].faltantes == ()
+    assert resultados[0].nombre_oido == "Em"
+
+
+def test_una_sola_nota_del_acorde_ya_no_alcanza():
+    """Hasta la fase 4 bastaba con acertar una nota, porque YIN es monofonico
+    y no habia con que exigir mas. Con el croma, rasguear mal se nota."""
+    ev = Evaluador(pista_de(acorde(1.0, EM, nombre="Em")))
+    resultados = ev.avanzar(DESPUES, [deteccion(1.0, 40)])
+    assert ACIERTO not in tipos(resultados)
+
+
+def test_rasguear_otro_acorde_no_acierta():
+    """Do comparte dos de las tres notas de Mi menor; tiene que rechazarse."""
+    for ajeno in (AM, C):
+        ev = Evaluador(pista_de(acorde(1.0, EM, nombre="Em")))
+        resultados = ev.avanzar(DESPUES, [rasgueo(1.0, ajeno)])
+        assert ACIERTO not in tipos(resultados), ajeno
+
+
+def test_una_cuerda_floja_se_perdona_pero_se_informa():
+    """Quien empieza no aprieta parejo. Un acorde al que le falta una cuerda
+    se da por bueno, pero el resultado dice cual fue."""
+    ev = Evaluador(pista_de(acorde(1.0, EM, nombre="Em")))
+    sin_la_tercera = [m for m in EM if m != 55]
+    resultados = ev.avanzar(1.0, [rasgueo(1.0, sin_la_tercera)])
+    assert tipos(resultados) == [ACIERTO]
+    assert 55 in resultados[0].faltantes
+
+
+def test_un_acorde_mal_armado_dice_que_cuerdas_faltaron():
+    """La devolucion util para quien aprende no es "no", es "te falto esta".
+
+    Se dejan fuera las dos cuerdas graves porque son las que no se pueden
+    falsear: los armonicos van hacia arriba, asi que si falta un E2 no hay
+    nada que pueda ponerlo. Ver
+    test_las_notas_agudas_si_las_pueden_poner_los_armonicos.
     """
-    em = [40, 47, 52, 55, 59, 64]
-    for midi in em:
-        ev = Evaluador(pista_de(acorde(1.0, em, nombre="Em")))
-        assert tipos(ev.avanzar(1.0, [deteccion(1.0, midi)])) == [ACIERTO], midi
+    ev = Evaluador(pista_de(acorde(1.0, EM, nombre="Em")))
+    solo_las_agudas = EM[2:]
+    resultados = ev.avanzar(DESPUES, [rasgueo(1.0, solo_las_agudas)])
+    extra = next(r for r in resultados if r.tipo == EXTRA)
+    assert extra.motivo == ACORDE_INCOMPLETO
+    assert extra.indice == 0
+    assert set(EM[:2]) <= set(extra.faltantes)
 
 
-def test_una_nota_ajena_al_acorde_no_lo_acierta():
-    ev = Evaluador(pista_de(acorde(1.0, [40, 47, 52], nombre="Em")))
-    resultados = ev.avanzar(DESPUES, [deteccion(1.0, 45)])   # A2 no esta en Em
-    assert set(tipos(resultados)) == {EXTRA, FALLO}
+def test_las_notas_agudas_si_las_pueden_poner_los_armonicos():
+    """Limite conocido del metodo, que conviene tener escrito.
+
+    Tocando solo E2 y B2, los armonicos de E2 caen en E3, B3 y E4, que son
+    otras tres notas del acorde: fisicamente esas frecuencias suenan, asi que
+    medir presencia no puede distinguirlo de un Em completo. Lo que lo
+    delataria es el G3, que no es armonico de ninguna de las dos.
+    """
+    ev = Evaluador(pista_de(acorde(1.0, EM, nombre="Em")))
+    assert tipos(ev.avanzar(1.0, [rasgueo(1.0, EM[:2])])) == [ACIERTO]
+
+
+def test_un_rasgueo_tiene_ventana_temporal_mas_ancha_que_una_nota():
+    """Las seis cuerdas no suenan juntas: el barrido corre el onset."""
+    tolerancias = Tolerancias()
+    assert tolerancias.temporal_acorde_s > tolerancias.temporal_s
+    ev = Evaluador(pista_de(acorde(1.0, EM, nombre="Em")))
+    desfase = (tolerancias.temporal_s + tolerancias.temporal_acorde_s) / 2
+    assert tipos(ev.avanzar(1.0 + desfase,
+                            [rasgueo(1.0 + desfase, EM)])) == [ACIERTO]
+
+
+def test_una_deteccion_sin_energias_no_puede_juzgar_un_acorde():
+    """Un ataque que se cerro antes de llenar la ventana armonica no trae con
+    que decidir, y decir que no sono el acorde es lo honesto."""
+    ev = Evaluador(pista_de(acorde(1.0, EM, nombre="Em")))
+    resultados = ev.avanzar(DESPUES, [Deteccion(t=1.0, f0=None)])
+    assert ACIERTO not in tipos(resultados)
 
 
 # ------------------------------------------------------- varios eventos

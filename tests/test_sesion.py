@@ -11,11 +11,16 @@ from nucleo.simulacion import PERFILES, generar_detecciones
 
 
 class AtaqueFalso:
-    """Lo minimo que la sesion usa de un Ataque del motor de audio."""
+    """Lo minimo que la sesion usa de un Ataque del motor de audio.
 
-    def __init__(self, t, f0):
+    `energias` es la medida armonica con la que se juzgan los rasgueos; en una
+    nota suelta el motor tampoco la necesita, pero el campo existe siempre.
+    """
+
+    def __init__(self, t, f0=None, energias=None):
         self.t = t
         self.f0 = f0
+        self.energias = energias
 
 
 def pista_simple(cantidad=3, paso=1.0):
@@ -387,3 +392,59 @@ def test_al_final_de_la_pista_ya_no_hay_acorde():
     s.empezar(0.0)
     s.avanzar(3.0 + pista.duracion + 1.0)
     assert s.acorde_a_la_vista() is None
+
+
+# --------------------------------------------------------- rasgueo de acordes
+
+def energias_de_acorde(midis):
+    from nucleo.simulacion import energias_de
+    return energias_de(midis)
+
+
+def test_un_rasgueo_correcto_acierta_el_acorde():
+    pista = cargar("pistas/03_acordes_basicos.json")
+    primero = pista.eventos[0]
+    s = sesion([pista], ventana_vista_s=3.0)
+    s.empezar(0.0)
+    t = 3.0 + primero.t
+    s.avanzar(t, [AtaqueFalso(t, energias=energias_de_acorde(primero.notas))])
+    assert s.resumen.aciertos == 1
+    assert s.avisos_vigentes()[0].texto == "PERFECTO"
+
+
+def test_un_acorde_con_una_cuerda_floja_avisa_cual():
+    """La devolucion que sirve para aprender es que cuerda no sono."""
+    pista = cargar("pistas/03_acordes_basicos.json")
+    primero = pista.eventos[0]           # Em: 6a 5a 4a 3a 2a 1a
+    sin_la_tercera = [m for m in primero.notas if m != 55]
+    s = sesion([pista], ventana_vista_s=3.0)
+    s.empezar(0.0)
+    t = 3.0 + primero.t
+    s.avanzar(t, [AtaqueFalso(t, energias=energias_de_acorde(sin_la_tercera))])
+    textos = [a.texto for a in s.avisos_vigentes()]
+    assert any("3a" in texto for texto in textos), textos
+
+
+def test_un_acorde_mal_armado_avisa_las_cuerdas_graves_que_faltan():
+    pista = cargar("pistas/03_acordes_basicos.json")
+    primero = pista.eventos[0]
+    solo_agudas = list(primero.notas)[2:]
+    s = sesion([pista], ventana_vista_s=3.0)
+    s.empezar(0.0)
+    t = 3.0 + primero.t
+    s.avanzar(t, [AtaqueFalso(t, energias=energias_de_acorde(solo_agudas))])
+    s.avanzar(1000.0)
+    assert s.resumen.aciertos == 0
+    assert s.resumen.extras == 1
+
+
+def test_un_rasgueo_sin_evento_cerca_no_revienta():
+    """Antes el aviso de nota de mas leia la frecuencia, que en un rasgueo
+    viene en None."""
+    pista = cargar("pistas/03_acordes_basicos.json")
+    s = sesion([pista], ventana_vista_s=3.0)
+    s.empezar(0.0)
+    s.avanzar(3.0 + 1.0,
+              [AtaqueFalso(3.0 + 1.0, energias=energias_de_acorde([40, 47]))])
+    assert any("rasgueo" in a.texto or "falta" in a.texto
+               for a in s.avisos_vigentes())

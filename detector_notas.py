@@ -36,6 +36,7 @@ from audio.analizador import Analizador
 from audio.calibracion import estadisticas, recomendar
 from audio.captura import BLOQUE, SR, Captura, dispositivos
 from audio.notas import CUERDAS_ESTANDAR, hz_a_nota, midi_a_hz, nombre_midi
+from nucleo.acordes import nombrar
 
 
 def barra_afinacion(cents, ancho=21):
@@ -74,11 +75,20 @@ def modo_ataques(captura, analizador, detalle=False):
     for bloque in captura.bloques():
         for ataque in analizador.procesar(bloque):
             total += 1
-            nota = ataque.nota
-            linea = (f"{ataque.t:8.3f}  "
-                     f"{nota.nombre + ' (' + nota.nombre_es + ')':<11} "
-                     f"{ataque.f0:8.2f}  {nota.cents:+7.1f}  "
-                     f"{ataque.confianza:5.2f}  {ataque.nivel:7.4f}")
+            if ataque.nota is None:
+                # Un rasgueo no da pitch: lo que lo describe es el acorde al
+                # que se parece su espectro.
+                acorde, puntaje = nombrar(ataque.energias)
+                etiqueta = f"~{acorde or '?'} (rasgueo)"
+                linea = (f"{ataque.t:8.3f}  {etiqueta:<11} "
+                         f"{'':>8}  {'':>7}  {puntaje:5.2f}  "
+                         f"{ataque.nivel:7.4f}")
+            else:
+                nota = ataque.nota
+                linea = (f"{ataque.t:8.3f}  "
+                         f"{nota.nombre + ' (' + nota.nombre_es + ')':<11} "
+                         f"{ataque.f0:8.2f}  {nota.cents:+7.1f}  "
+                         f"{ataque.confianza:5.2f}  {ataque.nivel:7.4f}")
             if detalle:
                 hueco = "     -" if t_anterior is None \
                     else f"{ataque.t - t_anterior:6.3f}"

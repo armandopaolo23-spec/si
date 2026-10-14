@@ -7,8 +7,8 @@ correcta.
 Este repositorio tambien contiene `NodoAlertaTempranaMultiriesgo/`, un
 proyecto distinto y sin relacion con el tutor.
 
-Estado: **fases 1 a 4 terminadas** (motor de audio, modelo de pista,
-evaluador y juego). Faltan las fases 5 y 6 (acordes, generador).
+Estado: **fases 1 a 5 terminadas** (motor de audio, modelo de pista,
+evaluador, juego y acordes). Falta la fase 6 (generador de pistas).
 
 ## Instalacion
 
@@ -46,7 +46,7 @@ Las pruebas no usan microfono ni audio grabado: todas las señales se
 sintetizan dentro de `tests/sintesis.py`.
 
 ```bash
-python3 -m pytest tests/ -q          # 391 pruebas, ~9 s
+python3 -m pytest tests/ -q          # 429 pruebas, ~11 s
 ```
 
 Con la guitarra, una linea por cada pulsacion detectada:
@@ -254,7 +254,9 @@ audio/
   analizador.py  canalizacion pura: bloques de muestras -> ataques con nota
   captura.py     envoltorio de sounddevice (unico modulo que lo importa)
   calibracion.py medida de umbrales contra el microfono real
+  croma.py       energia por semitono, la entrada del detector de acordes
 nucleo/
+  acordes.py     reconocimiento de acordes: presencia por nota y croma
   pista.py       modelo de pista: carga y validacion del JSON
   evaluador.py   decide acierto, fallo o nota de mas
   puntaje.py     puntos de un acierto segun la racha

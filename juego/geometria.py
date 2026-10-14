@@ -65,6 +65,21 @@ def digitacion_de_nota(midi, afinacion, cuerda=None, traste=None):
     return elegida, midi - afinacion[CUERDAS - elegida]
 
 
+def asignacion_de_acorde(notas, afinacion):
+    """Que cuerda y traste le toca a cada nota del acorde: {midi: (cuerda, traste)}.
+
+    Es el mismo calculo que digitacion_de_acorde, expuesto por nota para
+    poder decir "te falto la 3a cuerda" en vez de "te falto el Sol3".
+    """
+    trastes = digitacion_de_acorde(notas, afinacion)
+    asignacion = {}
+    for indice, traste in enumerate(trastes):
+        if traste is None:
+            continue
+        asignacion[afinacion[indice] + traste] = (CUERDAS - indice, traste)
+    return asignacion
+
+
 def digitacion_de_acorde(notas, afinacion):
     """Traste por cuerda para un acorde, de la 6a a la 1a. None = no se toca.
 

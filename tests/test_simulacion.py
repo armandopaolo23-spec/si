@@ -57,10 +57,16 @@ def test_una_guitarra_25_cents_baja_sigue_acertando(ruta):
     Con tolerancia de 35 cents esas notas tienen que pasar, o el juego
     marcaria fallo por la afinacion de la guitarra y no por como se toca.
     """
-    _, evaluador, _ = jugar(ruta, "desafinado")
+    pista, evaluador, _ = jugar(ruta, "desafinado")
     resumen = evaluador.resumen
     assert resumen.aciertos == resumen.total
-    assert resumen.error_cents_medio == pytest.approx(-25.0, abs=0.1)
+    # El promedio de cents solo cubre notas sueltas: un acorde se juzga por
+    # que notas suenan, no por cuanto se desvia una sola, asi que una pista
+    # de puros acordes no aporta ninguna desviacion que promediar.
+    if any(e.tipo == "nota" for e in pista.eventos):
+        assert resumen.error_cents_medio == pytest.approx(-25.0, abs=0.1)
+    else:
+        assert resumen.error_cents_medio == 0.0
 
 
 def test_una_tolerancia_estricta_castiga_al_que_va_tarde():
