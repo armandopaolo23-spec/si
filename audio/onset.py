@@ -59,7 +59,7 @@ class DetectorOnset:
         return np.log1p(COMPRESION * mag[self._bin_ini:self._bin_fin])
 
     def procesar(self, marco):
-        """Devuelve (flujo, supera_umbral) para la ventana mas reciente.
+        """Devuelve (flujo, supera_umbral, umbral) para la ventana mas reciente.
 
         No aplica periodo refractario: un mismo golpe puede superar el umbral
         en dos o tres ventanas seguidas. Agrupar eso en un solo ataque es
@@ -69,7 +69,7 @@ class DetectorOnset:
         mag = self._magnitud(marco)
         if self._mag_previa is None:
             self._mag_previa = mag
-            return 0.0, False
+            return 0.0, False, self._margen
 
         # Solo las diferencias positivas: la energia que se apaga no es ataque.
         flujo = float(np.sum(np.maximum(mag - self._mag_previa, 0.0)))
@@ -84,10 +84,11 @@ class DetectorOnset:
         # bajando. Sin esto, el decaimiento de una nota grave produce bultos
         # de flujo unos 90 ms despues del golpe que la mediana todavia no
         # alcanzo a subir, y se cuentan como una segunda pulsacion.
-        supera = flujo > max(umbral, self._piso)
+        efectivo = max(umbral, self._piso)
+        supera = flujo > efectivo
         self._piso = max(self._piso * self._decaimiento, flujo if supera else 0.0)
 
         self._historia = np.roll(self._historia, -1)
         self._historia[-1] = flujo
         self._n_historia = min(self._n_historia + 1, len(self._historia))
-        return flujo, supera
+        return flujo, supera, efectivo

@@ -4,6 +4,7 @@ Todo aqui es funcion pura: no toca audio ni pantalla, asi que se prueba
 directamente con pytest.
 """
 
+import re
 from dataclasses import dataclass
 
 import numpy as np
@@ -60,6 +61,30 @@ def desde_midi(midi):
 def hz_a_nota(f0):
     """Nota mas cercana a una frecuencia en Hz."""
     return desde_midi(hz_a_midi(f0))
+
+
+# Nombre de nota con octava: "E2", "C#3", "Bb3", "C-1". Se aceptan bemoles
+# porque las pistas se escriben a mano y es comodo poder usar los dos.
+_PATRON_NOTA = re.compile(r"^([A-G])([#b]?)(-?\d+)$")
+
+_GRADOS = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
+
+
+def nombre_a_midi(nombre):
+    """Numero MIDI de un nombre con octava. 'E2' -> 40.
+
+    Lanza ValueError si el nombre no se entiende.
+    """
+    if not isinstance(nombre, str):
+        raise ValueError(f"nombre de nota no es texto: {nombre!r}")
+    coincidencia = _PATRON_NOTA.match(nombre.strip())
+    if coincidencia is None:
+        raise ValueError(
+            f"nombre de nota no reconocido: {nombre!r} "
+            "(se espera algo como 'E2', 'C#3' o 'Bb3')")
+    letra, alteracion, octava = coincidencia.groups()
+    grado = _GRADOS[letra] + {"": 0, "#": 1, "b": -1}[alteracion]
+    return (int(octava) + 1) * 12 + grado
 
 
 def cents_entre(f_medida, f_referencia):

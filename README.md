@@ -7,13 +7,14 @@ correcta.
 Este repositorio tambien contiene `NodoAlertaTempranaMultiriesgo/`, un
 proyecto distinto y sin relacion con el tutor.
 
-Estado: **fase 1 (motor de audio) terminada**. Faltan las fases 2 a 6
-(modelo de pista, evaluador, juego, acordes, generador).
+Estado: **fases 1 a 5 terminadas** (motor de audio, modelo de pista,
+evaluador, juego y acordes). Falta la fase 6 (generador de pistas).
 
 ## Instalacion
 
 Ubuntu 23.04 y posteriores no dejan instalar con pip en el Python del
-sistema (PEP 668), asi que conviene un entorno virtual:
+sistema (PEP 668, "externally-managed-environment"), asi que hace falta un
+entorno virtual:
 
 ```bash
 sudo apt install libportaudio2 python3-venv
@@ -22,8 +23,22 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-`pygame` se agrega en la fase 4. Cada vez que abras una terminal nueva hay
-que volver a hacer `source .venv/bin/activate`.
+Cada vez que abras una terminal nueva hay que volver a hacer
+`source .venv/bin/activate`, y correr todo con ese entorno activo.
+
+### Cuidado con la version de Python
+
+Comprobar con `python3 -V`. Las fases 1 a 3 solo necesitan numpy y
+sounddevice, que andan en cualquier version reciente. **pygame es otra
+cosa**: la version 2.6.1 publica wheels hasta CPython 3.13, asi que en
+Python 3.14 o mas nuevo `pip install pygame` intenta compilar desde el
+codigo fuente, necesita las cabeceras de SDL2 y puede fallar.
+
+Por eso `requirements.txt` pide **pygame-ce** y no pygame: es el mismo
+proyecto forkeado por parte de sus mantenedores, publica wheels para CPython
+3.14 y es reemplazo directo, `import pygame` no cambia. La suite entera de
+pruebas corre igual con uno o con otro, asi que si algun dia se vuelve a
+pygame no hay que tocar codigo, solo esa linea.
 
 ## Como verificar la fase 1
 
@@ -31,7 +46,7 @@ Las pruebas no usan microfono ni audio grabado: todas las señales se
 sintetizan dentro de `tests/sintesis.py`.
 
 ```bash
-python3 -m pytest tests/ -q          # 54 pruebas, ~4 s
+python3 -m pytest tests/ -q          # 442 pruebas, ~11 s
 ```
 
 Con la guitarra, una linea por cada pulsacion detectada:
@@ -55,6 +70,18 @@ no pasa de ~0.01, el microfono esta cortando los graves**: acerca la laptop a
 la boca de la guitarra, sube la ganancia de entrada, o baja la puerta de ruido
 con `--umbral 0.0015`.
 
+Para entender **por que** disparo cada ataque:
+
+```bash
+python3 detector_notas.py --detalle
+```
+
+Agrega tres columnas: `dt` (hueco desde el ataque anterior), `flujo` y
+`umbral`, y el `margen` entre los dos. Un ataque real de guitarra dispara con
+margen de 6x a 30x; un margen cerca de 1x es un falso positivo al filo del
+umbral. Es la unica forma de distinguir "el detector dispara de mas" de
+"se toco de mas".
+
 Para comprobar que el microfono capta bien cada cuerda y para afinar:
 
 ```bash
@@ -70,6 +97,168 @@ Que conviene probar a mano:
   sube `--umbral`.
 - Un golpe en la caja: no debe salir nota; se cuenta como descartado.
 
+## Como verificar la fase 2
+
+```bash
+python3 mostrar_pista.py pistas/01_cuerdas_al_aire.json
+python3 mostrar_pista.py pistas/*.json        # revisar las tres
+```
+
+Imprime la linea de tiempo de la pista: instante, pulso, duracion, notas y
+digitacion sugerida de cada evento.
+
+Si la pista tiene errores, los informa **todos** de una vez con el numero de
+evento, y sale con codigo 1. Las pistas se escriben a mano, asi que se valida:
+tipos de cada campo, rango de notas que el detector puede oir, digitaciones
+que de verdad produzcan el pitch pedido, orden temporal, y acordes con nombre
+y al menos dos notas.
+
+## Como verificar la fase 3
+
+El evaluador es logica pura, asi que se prueba con `pytest`. Para verlo
+funcionando, `--simular` toca una pista con detecciones inventadas y muestra
+como la calificaria, sin microfono:
+
+```bash
+python3 mostrar_pista.py pistas/02_escala_do_mayor.json --simular todos
+python3 mostrar_pista.py pistas/01_cuerdas_al_aire.json --simular tarde
+python3 mostrar_pista.py pistas/02_escala_do_mayor.json --simular tarde \
+    --tolerancia-ms 50          # apretar la ventana y ver que ya no pasa
+```
+
+Perfiles: `perfecto`, `tarde` (80 ms tarde de forma sistematica),
+`desafinado` (25 cents bajo, como la 4a cuerda real) y `desprolijo`.
+
+La simulacion corre el evaluador como lo hara el juego: bucle de 60 fps y
+detecciones que llegan con el retardo real del motor. Eso es lo que prueba
+que el retardo no inventa fallos cuando se toca bien.
+
+## Tolerancias del evaluador
+
+| | Defecto | Que significa |
+|---|---|---|
+| Temporal | +-120 ms | Cuanto antes o despues del `t` esperado vale el golpe. |
+| Afinacion | +-35 cents | Cuanta desviacion se perdona. +-50 seria "cualquier cosa que redondee a la nota correcta". |
+
+Ambas configurables en `nucleo/evaluador.py` (`Tolerancias`) y desde la CLI.
+35 cents es generoso a proposito: una guitarra acustica con las cuerdas algo
+bajas da desviaciones de 15 a 25 cents constantes, y con una ventana mas
+estrecha el juego marcaria fallo por la afinacion del instrumento en vez de
+por como se toca.
+
+La desviacion se mide en cents contra la frecuencia pedida, no comparando
+nombres de nota. Una nota 55 cents alta de E2 se lee como F2 a -45 cents:
+comparando nombres parece estar a 45 y pasaria, medida contra lo pedido esta
+a 55 y no pasa.
+
+Cuando una deteccion no acierta, el resultado dice por que: `sin_evento` (no
+habia nada pedido en ese momento) o `afinacion` (habia un evento ahi mismo y
+solo fallo la desviacion, con el numero de evento y por cuantos cents). Son
+dos errores que se corrigen de forma distinta, y confundirlos hace parecer
+que el juego esta roto.
+
+## Como verificar la fase 4
+
+```bash
+python3 tocar.py                    # todas las pistas de pistas/
+python3 tocar.py --umbral 0.004     # el valor que sugiera --calibrar
+python3 tocar.py --vista 2.0        # menos segundos en pantalla
+python3 tocar.py --desfase-acorde-ms 109   # compensar el barrido del rasgueo
+python3 tocar.py --etiquetas notas  # nombres de nota en vez de cuerda/traste
+```
+
+La pantalla de resultados informa el desfase de las notas sueltas y el de
+los rasgueos por separado, y si alguno es sistematico sugiere el comando que
+lo centra: `--desfase-ms` para las notas y `--desfase-acorde-ms` para los
+acordes. Van separados porque se midieron distintos con la guitarra real:
+las notas sueltas salian 8-26 ms adelantadas y los rasgueos 109 ms. En un
+rasgueo el detector marca la primera cuerda del barrido, y si la intencion es
+que el golpe caiga en la caja, esa cuerda suena antes. Un desfase unico
+calibrado con acordes dejaria las notas unos 90 ms tarde.
+
+Solo se sugiere cuando hay al menos 5 aciertos de ese tipo y el sesgo pasa de
+40 ms: el detector ya tiene unos 20 ms de error propio y una pasada corta suma
+jitter, asi que por debajo de eso seria ajustar ruido.
+
+Es una compensacion personal, distinta de `retardo_onset_s` del analizador,
+que corrige un sesgo de medicion del detector y se calibra contra señales con
+instante conocido. Confundirlas seria falsear los timestamps del detector
+para tapar un efecto de como se toca.
+
+Las notas de mas se desglosan por motivo: no sonaron claras (cuerda mal
+pisada, traste que zumba), desafinadas, acordes incompletos o fuera de lugar.
+Sin el desglose el numero no dice que corregir.
+
+Controles: en el menu, flechas para elegir y Enter para tocar; jugando, Esc
+vuelve al menu; en resultados, Enter va al menu y R repite.
+
+La nota hay que tocarla cuando **llena la caja** de la linea de golpe. La caja
+mide lo mismo que una nota a proposito: con solo una linea no se sabia si el
+objetivo era el borde de la nota o su centro, y como el highway baja a unos
+139 px/s, el borde de abajo llega 94 ms antes que el centro. Eso se medio en
+la practica como un adelanto sistematico de 73 ms.
+
+Cada nota que baja dice **que cuerda y que traste** tocar, no el nombre de la
+nota: "E2" no dice que hacer con las manos y "6a 0" si. El traste va grande y
+la cuerda chica, porque en que carril esta la nota ya indica la cuerda pero el
+traste no se deduce de ningun lado. Con `--etiquetas notas` se muestran los
+nombres, para cuando ya se conocen.
+
+Para rasguear, el bloque del acorde lleva solo el nombre y **a la derecha
+aparece su diagrama**: la grilla con los dedos, las cuerdas al aire marcadas
+con `o` y las que no suenan con `x`, como en un cancionero. Un texto como
+`x02210` sobre una barra que esta bajando hay que descifrarlo; la grilla se
+lee de un golpe. El diagrama muestra el acorde que viene y sigue un rato
+despues de tocarlo, para poder comprobar la mano. Una pista de solo punteo
+no lo dibuja.
+
+La digitacion no esta escrita a mano: se busca la asignacion de notas a
+cuerdas que respete el orden de alturas -la nota mas grave en la cuerda mas
+grave de las que suenan- y entre las validas gana la que menos trastes
+abarca. Eso da las posiciones de siempre tanto en acordes abiertos
+(Em 022000, Am x02210, C x32010, G 320003) como con cejilla (F 133211,
+Bm x24432). Si un acorde tiene mas notas distintas que cuerdas no hay
+digitacion posible y el diagrama no se dibuja, en vez de inventar una.
+
+Las notas bajan por seis carriles, uno por cuerda, con la 6a a la izquierda
+como en una tablatura mirada de frente. Los acordes ocupan los carriles de
+sus notas con un color neutro. Un acierto pinta la nota de verde y muestra
+la desviacion; un fallo la pinta de roja; una nota de mas avisa si estuvo
+alta o baja.
+
+El marcador de pulso late con el compas. Es visual y no sonoro a proposito:
+un clic por los parlantes lo captaria el microfono y el detector lo contaria
+como notas.
+
+El render se prueba sin pantalla con el driver dummy de SDL, asi que
+`pytest` recorre las tres pistas completas dibujando cada cuadro.
+
+```json
+{
+  "titulo": "Ejercicio 1 - cuerdas al aire",
+  "bpm": 60,
+  "afinacion": ["E2", "A2", "D3", "G3", "B3", "E4"],
+  "eventos": [
+    {"t": 0.0, "dur": 1.5, "tipo": "nota", "midi": 40, "cuerda": 6, "traste": 0},
+    {"t": 2.0, "dur": 1.8, "tipo": "acorde", "nombre": "Em",
+     "notas": [40, 47, 52, 55, 59, 64]}
+  ]
+}
+```
+
+- `t` y `dur` en segundos. `t` es el instante del ataque y es lo que califica
+  el evaluador; `dur` es cuanto deberia sonar y sirve para dibujar la nota.
+- La `dur` de un evento **puede** pisar el `t` del siguiente: una cuerda sigue
+  sonando mientras se toca la que viene. Lo que no se permite es que dos
+  eventos compartan el mismo `t`; dos notas simultaneas son un `acorde`.
+- `cuerda` (1 = la mas aguda) y `traste` son opcionales y solo sugieren una
+  digitacion. La deteccion por frecuencia no distingue en que cuerda se toco,
+  asi que el evaluador acepta cualquier digitacion que produzca el pitch. Si
+  se incluyen, tienen que ser coherentes con `midi` y con `afinacion`.
+- `afinacion` es opcional; por defecto la estandar.
+- Rango valido de notas: D2 (MIDI 38) a D6 (MIDI 86), derivado de los limites
+  del detector. Una nota fuera de ahi seria imposible de acertar.
+
 ## Estructura
 
 ```
@@ -79,14 +268,35 @@ audio/
   onset.py       deteccion de ataques por flujo espectral
   analizador.py  canalizacion pura: bloques de muestras -> ataques con nota
   captura.py     envoltorio de sounddevice (unico modulo que lo importa)
+  calibracion.py medida de umbrales contra el microfono real
+  croma.py       energia por semitono, la entrada del detector de acordes
+nucleo/
+  acordes.py     reconocimiento de acordes: presencia por nota y croma
+  pista.py       modelo de pista: carga y validacion del JSON
+  evaluador.py   decide acierto, fallo o nota de mas
+  puntaje.py     puntos de un acierto segun la racha
+  simulacion.py  toca una pista con detecciones inventadas, para probar
+juego/
+  sesion.py      maquina de estados menu / jugando / resultados (pura)
+  geometria.py   en que carril y a que altura va cada nota (pura)
+  render.py      dibujo con pygame
+  aplicacion.py  bucle principal: audio, sesion y render
+pistas/
+  01_cuerdas_al_aire.json      seis cuerdas al aire, una cada 2.5 s
+  02_escala_do_mayor.json      escala de Do mayor, una nota por segundo
+  03_acordes_basicos.json      solo acordes, 7 s entre cambio y cambio
+  04_acordes_y_melodia.json    Em Am C G con melodia entre medio
 tests/
   sintesis.py    generador de pulsaciones de guitarra para las pruebas
-detector_notas.py  CLI de diagnostico (modo ataques y modo afinador)
+detector_notas.py  CLI de diagnostico (ataques, afinador, calibrar)
+mostrar_pista.py   CLI que imprime la linea de tiempo de una pista
+tocar.py           el juego
 ```
 
-`audio/analizador.py` y todo lo que esta debajo son funciones puras sobre
-arrays: no importan `sounddevice` ni `pygame`, asi que las fases siguientes
-se pueden testear sin audio ni ventana.
+`sounddevice` se importa solo en `audio/captura.py` y `pygame` solo en
+`juego/render.py` y `juego/aplicacion.py`. Todo lo demas es logica pura que
+corre sin tarjeta de sonido ni pantalla, y hay una prueba
+(`tests/test_capas.py`) que lo verifica para que no se rompa sin querer.
 
 ## Numeros medidos
 
@@ -106,7 +316,7 @@ constructor:
 | Parametro | Defecto | Que hace |
 |---|---|---|
 | `umbral_ruido` | 0.003 | Puerta de ruido RMS. Bajar si el micro entrega poco nivel. |
-| `factor` (onset) | 6.0 | Cuantas veces la mediana reciente del flujo hay que superar. Bajar si pierde pulsaciones suaves. |
+| `factor` (onset) | 6.0 | Cuantas veces la mediana reciente del flujo hay que superar. Bajar si pierde pulsaciones suaves, subir si dispara de mas. |
 | `refractario_s` | 0.08 | Minimo entre dos ataques. Subir si un golpe cuenta doble. |
 | `retardo_onset_s` | 0.014 | Correccion del timestamp. Recalibrar contra un metronomo en la fase 4. |
 | `saltos_espera` / `saltos_pitch` | 3 / 3 | Cuanto esperar y cuantas lecturas promediar. Bajar da feedback mas rapido y pitch menos estable. |

@@ -92,6 +92,39 @@ class Captura:
             self._stream = None
         return False
 
+    def vaciar(self):
+        """Descarta el audio en cola y devuelve cuantos bloques habia.
+
+        Hace falta antes de empezar a medir: mientras el programa espera en un
+        prompt la cola sigue llenandose, y ese audio viejo no corresponde a lo
+        que se quiere medir.
+        """
+        descartados = 0
+        while True:
+            try:
+                self._cola.get_nowait()
+            except queue.Empty:
+                break
+            descartados += 1
+        # Los bloques que se perdieron por cola llena mientras el programa
+        # no estaba consumiendo tampoco cuentan: el aviso de descartes debe
+        # hablar solo del analisis, que es donde importa.
+        self.descartes = 0
+        return descartados
+
+    def drenar(self):
+        """Devuelve los bloques disponibles sin bloquear.
+
+        Es lo que usa el bucle de render: se llama una vez por cuadro y no
+        puede esperar, porque el dibujo tiene unos 16 ms de presupuesto.
+        """
+        bloques = []
+        while True:
+            try:
+                bloques.append(self._cola.get_nowait())
+            except queue.Empty:
+                return bloques
+
     def bloques(self, espera=1.0):
         """Generador de bloques mono (float32). Bloquea hasta que llegue audio."""
         while True:

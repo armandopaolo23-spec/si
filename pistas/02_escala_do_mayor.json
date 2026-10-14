@@ -1,0 +1,23 @@
+{
+  "titulo": "Ejercicio 2 - escala de Do mayor, subiendo y bajando",
+  "bpm": 60,
+  "afinacion": ["E2", "A2", "D3", "G3", "B3", "E4"],
+  "eventos": [
+    {"t":  0.0, "dur": 0.9, "tipo": "nota", "midi": 48, "cuerda": 5, "traste": 3},
+    {"t":  1.0, "dur": 0.9, "tipo": "nota", "midi": 50, "cuerda": 4, "traste": 0},
+    {"t":  2.0, "dur": 0.9, "tipo": "nota", "midi": 52, "cuerda": 4, "traste": 2},
+    {"t":  3.0, "dur": 0.9, "tipo": "nota", "midi": 53, "cuerda": 4, "traste": 3},
+    {"t":  4.0, "dur": 0.9, "tipo": "nota", "midi": 55, "cuerda": 3, "traste": 0},
+    {"t":  5.0, "dur": 0.9, "tipo": "nota", "midi": 57, "cuerda": 3, "traste": 2},
+    {"t":  6.0, "dur": 0.9, "tipo": "nota", "midi": 59, "cuerda": 2, "traste": 0},
+    {"t":  7.0, "dur": 1.6, "tipo": "nota", "midi": 60, "cuerda": 2, "traste": 1},
+
+    {"t":  9.0, "dur": 0.9, "tipo": "nota", "midi": 59, "cuerda": 2, "traste": 0},
+    {"t": 10.0, "dur": 0.9, "tipo": "nota", "midi": 57, "cuerda": 3, "traste": 2},
+    {"t": 11.0, "dur": 0.9, "tipo": "nota", "midi": 55, "cuerda": 3, "traste": 0},
+    {"t": 12.0, "dur": 0.9, "tipo": "nota", "midi": 53, "cuerda": 4, "traste": 3},
+    {"t": 13.0, "dur": 0.9, "tipo": "nota", "midi": 52, "cuerda": 4, "traste": 2},
+    {"t": 14.0, "dur": 0.9, "tipo": "nota", "midi": 50, "cuerda": 4, "traste": 0},
+    {"t": 15.0, "dur": 2.0, "tipo": "nota", "midi": 48, "cuerda": 5, "traste": 3}
+  ]
+}

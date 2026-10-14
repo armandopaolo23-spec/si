@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from audio.notas import (CUERDAS_ESTANDAR, cents_entre, hz_a_midi, hz_a_nota,
-                         midi_a_hz, nombre_midi)
+                         midi_a_hz, nombre_a_midi, nombre_midi)
 
 
 def test_la4_es_la_referencia():
@@ -53,3 +53,28 @@ def test_octavas_bajas_no_se_desbordan():
     # que queremos para octavas negativas.
     assert nombre_midi(0) == "C-1"
     assert nombre_midi(12) == "C0"
+
+
+@pytest.mark.parametrize("nombre, esperado", [
+    ("E2", 40), ("A2", 45), ("D3", 50), ("G3", 55), ("B3", 59), ("E4", 64),
+    ("A4", 69), ("C-1", 0), ("C0", 12), ("C#3", 49), ("Db3", 49),
+    ("Bb3", 58), ("A#3", 58),
+])
+def test_nombre_a_midi(nombre, esperado):
+    assert nombre_a_midi(nombre) == esperado
+
+
+def test_nombre_a_midi_ida_y_vuelta():
+    for midi in range(24, 97):
+        assert nombre_a_midi(nombre_midi(midi)) == midi
+
+
+def test_nombre_a_midi_tolera_espacios():
+    assert nombre_a_midi("  E2 ") == 40
+
+
+@pytest.mark.parametrize("nombre", ["", "H2", "E", "E#", "Ex2", "2E", "mi2",
+                                    "E2.5", None, 40])
+def test_nombre_a_midi_rechaza_lo_que_no_entiende(nombre):
+    with pytest.raises(ValueError):
+        nombre_a_midi(nombre)

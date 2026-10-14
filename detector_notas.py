@@ -11,6 +11,10 @@ Dos modos:
                          Sirve para comprobar que el microfono capta bien las
                          cuerdas graves y para afinar la guitarra.
 
+  calibrar               Mide el ruido de sala y el nivel de la guitarra, y
+                         sugiere los umbrales para *tu* microfono. Conviene
+                         correrlo antes que nada.
+
 Instalacion (Ubuntu):
     sudo apt install libportaudio2
     pip install numpy sounddevice
@@ -18,6 +22,7 @@ Instalacion (Ubuntu):
 Uso:
     python3 detector_notas.py --lista           # ver dispositivos de entrada
     python3 detector_notas.py                   # modo ataques
+    python3 detector_notas.py --calibrar        # medir umbrales de tu micro
     python3 detector_notas.py --afinador        # modo afinador
     python3 detector_notas.py --dispositivo 3   # forzar un dispositivo
     python3 detector_notas.py --umbral 0.006    # subir la puerta de ruido
@@ -28,8 +33,10 @@ import argparse
 import sys
 
 from audio.analizador import Analizador
+from audio.calibracion import estadisticas, recomendar
 from audio.captura import BLOQUE, SR, Captura, dispositivos
 from audio.notas import CUERDAS_ESTANDAR, hz_a_nota, midi_a_hz, nombre_midi
+from nucleo.acordes import nombrar
 
 
 def barra_afinacion(cents, ancho=21):
@@ -50,20 +57,143 @@ def referencia_cuerdas():
     )
 
 
-def modo_ataques(captura, analizador):
+def modo_ataques(captura, analizador, detalle=False):
     print("Modo ataques. Toca notas sueltas. Ctrl+C para salir.")
     print("Referencia:", referencia_cuerdas())
     print()
-    print(f"{'t (s)':>8}  {'nota':<11} {'Hz':>8}  {'cents':>7}  {'conf':>5}  {'nivel':>7}")
+    cabecera = (f"{'t (s)':>8}  {'nota':<11} {'Hz':>8}  {'cents':>7}  "
+                f"{'conf':>5}  {'nivel':>7}")
+    if detalle:
+        # dt es el hueco desde el ataque anterior, y flujo/umbral dicen por
+        # cuanto margen disparo: juntos distinguen "disparo de mas" de
+        # "se toco de mas".
+        cabecera += f"  {'dt':>6}  {'flujo':>8}  {'umbral':>8}  {'margen':>7}"
+    print(cabecera)
+
     total = 0
+    t_anterior = None
     for bloque in captura.bloques():
         for ataque in analizador.procesar(bloque):
             total += 1
-            nota = ataque.nota
-            print(f"{ataque.t:8.3f}  {nota.nombre + ' (' + nota.nombre_es + ')':<11} "
-                  f"{ataque.f0:8.2f}  {nota.cents:+7.1f}  "
-                  f"{ataque.confianza:5.2f}  {ataque.nivel:7.4f}")
+            if ataque.nota is None:
+                # Un rasgueo no da pitch: lo que lo describe es el acorde al
+                # que se parece su espectro.
+                acorde, puntaje = nombrar(ataque.energias)
+                etiqueta = f"~{acorde or '?'} (rasgueo)"
+                linea = (f"{ataque.t:8.3f}  {etiqueta:<11} "
+                         f"{'':>8}  {'':>7}  {puntaje:5.2f}  "
+                         f"{ataque.nivel:7.4f}")
+            else:
+                nota = ataque.nota
+                linea = (f"{ataque.t:8.3f}  "
+                         f"{nota.nombre + ' (' + nota.nombre_es + ')':<11} "
+                         f"{ataque.f0:8.2f}  {nota.cents:+7.1f}  "
+                         f"{ataque.confianza:5.2f}  {ataque.nivel:7.4f}")
+            if detalle:
+                hueco = "     -" if t_anterior is None \
+                    else f"{ataque.t - t_anterior:6.3f}"
+                margen = ataque.flujo / ataque.umbral if ataque.umbral else 0.0
+                linea += (f"  {hueco}  {ataque.flujo:8.2f}  "
+                          f"{ataque.umbral:8.2f}  {margen:6.1f}x")
+            print(linea)
+            t_anterior = ataque.t
     return total
+
+
+# Segundos que se tiran al empezar cada etapa: cubren el movimiento de la
+# mano y cualquier resto del tramo anterior.
+CALENTAMIENTO_S = 0.5
+
+
+def recorrer(captura, analizador, segundos, etiqueta, recolectar):
+    """Consume unos segundos de audio llamando a recolectar(marco).
+
+    El reloj es el audio consumido, no el reloj de pared, asi que la cuenta
+    regresiva no se desincroniza si el sistema se traba un instante.
+    """
+    t_inicio = None
+    ultimo_aviso = None
+    for bloque in captura.bloques():
+        analizador.procesar(bloque)
+        marco = analizador.ultimo_marco
+        if marco is None:
+            continue
+        if t_inicio is None:
+            t_inicio = analizador.t_actual
+        transcurrido = analizador.t_actual - t_inicio
+        restante = segundos - transcurrido
+        if restante <= 0:
+            break
+        if int(restante) + 1 != ultimo_aviso:
+            ultimo_aviso = int(restante) + 1
+            print(f"\r  {etiqueta} {ultimo_aviso:2d}    ", end="", flush=True)
+        if transcurrido >= CALENTAMIENTO_S:
+            recolectar(marco)
+    print(f"\r  {etiqueta} listo      ")
+
+
+def medir(captura, analizador, segundos, etiqueta):
+    """Recolecta nivel y flujo por ventana durante unos segundos de audio."""
+    niveles, flujos = [], []
+
+    def recolectar(marco):
+        niveles.append(marco.nivel)
+        flujos.append(marco.flujo)
+
+    captura.vaciar()   # el audio de la cuenta regresiva no cuenta
+    recorrer(captura, analizador, segundos, etiqueta, recolectar)
+    return niveles, flujos
+
+
+ESPERA_S = 4.0     # cuenta regresiva antes de cada etapa
+
+
+def modo_calibrar(captura, analizador, segundos):
+    print(f"Calibracion del microfono. Dos etapas de {segundos:g} s.")
+    print()
+    print("No uses el teclado durante la medicion: el microfono integrado")
+    print("capta el clic y lo contaria como ruido de sala.")
+    print()
+
+    print("1) SILENCIO: apoya la guitarra y no toques nada.")
+    recorrer(captura, analizador, ESPERA_S, "     empieza en", lambda _: None)
+    nivel_silencio, flujo_silencio = medir(
+        captura, analizador, segundos, "     midiendo silencio, faltan")
+
+    print()
+    print("2) GUITARRA: toca cuerdas al aire, una tras otra, sin apurarte.")
+    recorrer(captura, analizador, ESPERA_S, "     empieza en", lambda _: None)
+    nivel_tocando, flujo_tocando = medir(
+        captura, analizador, segundos, "     midiendo guitarra, faltan")
+
+    silencio_n, tocando_n = estadisticas(nivel_silencio), estadisticas(nivel_tocando)
+    silencio_f, tocando_f = estadisticas(flujo_silencio), estadisticas(flujo_tocando)
+    recomendacion = recomendar(silencio_n, tocando_n, silencio_f, tocando_f)
+
+    print()
+    print(f"{'':<10} {'nivel mediana':>14} {'nivel p95':>10} {'nivel max':>10}"
+          f" {'flujo mediana':>14} {'flujo p99':>10}")
+    for etiqueta, n, f in (("silencio", silencio_n, silencio_f),
+                           ("guitarra", tocando_n, tocando_f)):
+        print(f"{etiqueta:<10} {n.mediana:14.4f} {n.p95:10.4f} {n.maximo:10.4f}"
+              f" {f.mediana:14.2f} {f.p99:10.2f}")
+    print()
+    print(f"Separacion de nivel: {recomendacion.separacion_nivel:6.1f}x"
+          "   (cuanto sube el volumen al tocar)")
+    print(f"Separacion de flujo: {recomendacion.separacion_flujo:6.1f}x"
+          "   (cuanto destacan los ataques)")
+    print()
+    for aviso in recomendacion.avisos:
+        print(f"AVISO: {aviso}")
+    if not recomendacion.avisos:
+        print("El microfono separa bien la guitarra del ruido de sala.")
+    print()
+    print("Umbral sugerido para este microfono:")
+    print(f"    python3 detector_notas.py --umbral {recomendacion.umbral:.4f}")
+    if abs(recomendacion.factor - 6.0) > 1.5:
+        print(f"Factor de onset sugerido: {recomendacion.factor:.1f} "
+              "(el defecto es 6.0). Pasame este numero y lo ajusto.")
+    return None
 
 
 def modo_afinador(captura, analizador):
@@ -98,6 +228,12 @@ def main():
                     help="indice del dispositivo de entrada")
     ap.add_argument("--afinador", action="store_true",
                     help="modo afinador en vez de modo ataques")
+    ap.add_argument("--calibrar", action="store_true",
+                    help="medir el ruido de sala y sugerir umbrales")
+    ap.add_argument("--detalle", action="store_true",
+                    help="mostrar flujo, umbral y hueco entre ataques")
+    ap.add_argument("--segundos", type=float, default=8.0,
+                    help="duracion de cada etapa de la calibracion")
     ap.add_argument("--umbral", type=float, default=None,
                     help="puerta de ruido RMS (sube si detecta en silencio)")
     ap.add_argument("--sr", type=int, default=SR,
@@ -113,10 +249,14 @@ def main():
         with Captura(sr=args.sr, bloque=BLOQUE,
                      dispositivo=args.dispositivo) as captura:
             try:
-                if args.afinador:
+                if args.calibrar:
+                    # Sin puerta de ruido: hay que poder medir el silencio.
+                    analizador.umbral_ruido = 0.0
+                    total = modo_calibrar(captura, analizador, args.segundos)
+                elif args.afinador:
                     total = modo_afinador(captura, analizador)
                 else:
-                    total = modo_ataques(captura, analizador)
+                    total = modo_ataques(captura, analizador, args.detalle)
             except KeyboardInterrupt:
                 total = None
             print()
