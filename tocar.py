@@ -73,6 +73,9 @@ def main():
                     help="ventana temporal en milisegundos")
     ap.add_argument("--tolerancia-cents", type=float, default=None,
                     help="ventana de afinacion en cents")
+    ap.add_argument("--desfase-ms", type=float, default=0.0,
+                    help="cuantos ms te adelantas de forma sistematica; "
+                         "la pantalla de resultados sugiere el valor")
     args = ap.parse_args()
 
     try:
@@ -98,7 +101,8 @@ def main():
         analizador, sesion = ejecutar(
             pistas, dispositivo=args.dispositivo, sr=args.sr,
             umbral_ruido=args.umbral, tolerancias=tolerancias,
-            ventana_vista_s=args.vista)
+            ventana_vista_s=args.vista,
+            desfase_s=args.desfase_ms / 1000.0)
     except RuntimeError as error:
         print(error, file=sys.stderr)
         sys.exit(1)

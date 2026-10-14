@@ -51,7 +51,7 @@ def _manejar_teclado(evento, sesion, analizador):
 
 
 def ejecutar(pistas, dispositivo=None, sr=SR, umbral_ruido=None,
-             tolerancias=None, ventana_vista_s=None):
+             tolerancias=None, ventana_vista_s=None, desfase_s=0.0):
     opciones = {} if umbral_ruido is None else {"umbral_ruido": umbral_ruido}
     analizador = Analizador(sr=sr, **opciones)
 
@@ -60,7 +60,7 @@ def ejecutar(pistas, dispositivo=None, sr=SR, umbral_ruido=None,
         argumentos["tolerancias"] = tolerancias
     if ventana_vista_s is not None:
         argumentos["ventana_vista_s"] = ventana_vista_s
-    sesion = Sesion(pistas, **argumentos)
+    sesion = Sesion(pistas, desfase_s=desfase_s, **argumentos)
 
     pygame.init()
     pantalla = pygame.display.set_mode((ANCHO, ALTO))

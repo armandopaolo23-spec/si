@@ -141,3 +141,33 @@ def test_un_titulo_larguisimo_no_desborda(pantalla, pistas):
     assert renderizador.fuente.size(recortado)[0] <= 280
     assert recortado.endswith("...")
     assert _recortar("corto", renderizador.fuente, 280) == "corto"
+
+
+def test_una_nota_a_tiempo_llena_la_caja_de_acierto(pantalla, pistas):
+    """La caja existe para que no haya duda de donde se acierta.
+
+    Antes solo habia una linea, y el borde de abajo de la nota la tocaba
+    94 ms antes que el centro: no se sabia si el objetivo era el borde o el
+    centro, y eso se medio como 73 ms de adelanto sistematico.
+    """
+    from juego.render import ALTO_CAJA, ALTO_NOTA, MARGEN_CAJA
+    renderizador = Renderizador(pantalla)
+    assert ALTO_CAJA == ALTO_NOTA + 2 * MARGEN_CAJA
+
+    # Con restante 0 la nota esta centrada en la linea, o sea dentro de la caja.
+    y = renderizador.y_de(0.0, 3.0)
+    assert y == pytest.approx(renderizador.y_linea)
+    assert abs(y - renderizador.y_linea) + ALTO_NOTA / 2 <= ALTO_CAJA / 2
+
+
+def test_los_resultados_sugieren_el_desfase(pantalla, pistas):
+    from audio.notas import midi_a_hz
+    sesion = Sesion([pistas[0]], ventana_vista_s=3.0)
+    sesion.empezar(0.0)
+    for evento in pistas[0].eventos:
+        t = 3.0 + evento.t - 0.073
+        sesion.avanzar(3.0 + evento.t, [AtaqueFalso(t, midi_a_hz(evento.midi))])
+    sesion.avanzar(1000.0)
+    assert sesion.desfase_sugerido_ms == 73
+    Renderizador(pantalla).dibujar(sesion)
+    assert pinto_algo(pantalla)

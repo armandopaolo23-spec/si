@@ -62,12 +62,19 @@ class Aviso:
 
 class Sesion:
     def __init__(self, pistas, tolerancias=None,
-                 ventana_vista_s=VENTANA_VISTA_S):
+                 ventana_vista_s=VENTANA_VISTA_S, desfase_s=0.0):
         if not pistas:
             raise ValueError("la sesion necesita al menos una pista")
         self.pistas = tuple(pistas)
         self.tolerancias = tolerancias or Tolerancias()
         self.ventana_vista_s = ventana_vista_s
+        # Compensacion personal: cuanto se corre cada deteccion antes de
+        # compararla. Positivo = quien toca se adelanta, asi que se empujan
+        # hacia adelante. Es distinto de retardo_onset_s del analizador: ese
+        # corrige un sesgo de medicion del detector y se calibra contra
+        # señales con instante conocido; este corrige como se sincroniza una
+        # persona con lo que ve en pantalla, y es distinto para cada una.
+        self.desfase_s = desfase_s
 
         self.estado = MENU
         self.seleccion = 0
@@ -112,7 +119,7 @@ class Sesion:
         self.t_pista = t_audio - self._t_inicio
         detecciones = []
         for ataque in ataques:
-            t = ataque.t - self._t_inicio
+            t = ataque.t - self._t_inicio + self.desfase_s
             # Lo que suena durante la entrada, antes de la primera nota, no
             # se evalua: seria afinar o acomodarse, no tocar la pista.
             if t >= -self.tolerancias.temporal_s:
@@ -157,6 +164,18 @@ class Sesion:
     @property
     def resumen(self):
         return self._evaluador.resumen if self._evaluador else None
+
+    @property
+    def desfase_sugerido_ms(self):
+        """Compensacion que centraria el sesgo temporal medido, en ms.
+
+        Suma la compensacion ya aplicada, asi que el valor sirve tal cual
+        aunque se venga de una pasada que ya usaba desfase.
+        """
+        resumen = self.resumen
+        if resumen is None or not resumen.aciertos:
+            return 0
+        return round(1000 * (self.desfase_s - resumen.error_temporal_medio_s))
 
     @property
     def progreso(self):

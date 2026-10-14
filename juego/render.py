@@ -40,6 +40,12 @@ MARGEN_LATERAL = 150
 ALTURA_LINEA = 0.80        # fraccion de la pantalla donde esta la linea
 ALTO_NOTA = 26
 CABECERA = 96
+# La caja de acierto tiene la altura de una nota mas un pelo de margen: una
+# nota la llena justo en el instante en que hay que tocarla. Sin ella solo
+# habia una linea, y el borde de abajo de la nota la tocaba 94 ms antes que
+# el centro, asi que no se sabia si el objetivo era el borde o el centro.
+MARGEN_CAJA = 4
+ALTO_CAJA = ALTO_NOTA + 2 * MARGEN_CAJA
 
 
 class Renderizador:
@@ -158,9 +164,15 @@ class Renderizador:
             self._en_el_centro(etiqueta, rect.center, self.fuente_nota)
 
     def _linea_de_golpe(self):
+        """Caja de acierto: la nota la llena justo cuando hay que tocarla."""
         y = self.y_linea
-        pygame.draw.line(self.pantalla, LINEA_GOLPE,
-                         (MARGEN_LATERAL - 30, y), (self.ancho - MARGEN_LATERAL + 30, y), 3)
+        izquierda = MARGEN_LATERAL - 30
+        ancho = self.ancho - 2 * izquierda
+        caja = pygame.Rect(izquierda, y - ALTO_CAJA / 2, ancho, ALTO_CAJA)
+        pygame.draw.rect(self.pantalla, _oscurecer(LINEA_GOLPE, 0.12), caja,
+                         border_radius=8)
+        pygame.draw.rect(self.pantalla, LINEA_GOLPE, caja, width=2,
+                         border_radius=8)
 
     def _avisos(self, sesion):
         colores = {ACIERTO: VERDE, FALLO: ROJO, EXTRA: AMBAR}
@@ -242,6 +254,15 @@ class Renderizador:
                         TEXTO_TENUE)
             self._texto(valor, (MARGEN_LATERAL + 220, y - 2), self.fuente)
             y += 42
+
+        sugerido = sesion.desfase_sugerido_ms
+        if abs(sugerido) >= 20:
+            sentido = "adelantas" if sugerido > 0 else "atrasas"
+            self._texto(f"Te {sentido} de forma sistematica. Para compensarlo:",
+                        (MARGEN_LATERAL, y + 16), self.fuente_chica, AMBAR)
+            self._texto(f"python3 tocar.py --desfase-ms {sugerido}",
+                        (MARGEN_LATERAL, y + 40), self.fuente_chica, TEXTO)
+            y += 52
 
         self._texto("Enter para volver al menu, R para repetir",
                     (MARGEN_LATERAL, y + 20), self.fuente_chica, TEXTO_TENUE)

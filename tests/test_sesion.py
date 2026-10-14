@@ -295,3 +295,48 @@ def test_una_pasada_perfecta_de_punta_a_punta():
     assert s.resumen.aciertos == s.resumen.total == len(pista.eventos)
     assert s.resumen.fallos == 0
     assert s.puntaje > 0
+
+
+# --------------------------------------------- compensacion personal
+
+def test_el_desfase_corre_las_detecciones_antes_de_comparar():
+    """Quien toca 73 ms adelantado, con --desfase-ms 73 queda centrado."""
+    from audio.notas import midi_a_hz
+    adelanto = 0.073
+    for desfase, esperado in ((0.0, -adelanto), (adelanto, 0.0)):
+        s = sesion(ventana_vista_s=3.0, desfase_s=desfase)
+        s.empezar(0.0)
+        t = 3.0 - adelanto                      # se toca antes de tiempo
+        s.avanzar(3.0, [AtaqueFalso(t, midi_a_hz(40))])
+        assert s.resumen.aciertos == 1
+        assert s.resumen.error_temporal_medio_s == pytest.approx(esperado,
+                                                                 abs=1e-9)
+
+
+def test_el_desfase_sugerido_centra_el_sesgo():
+    from audio.notas import midi_a_hz
+    s = sesion(ventana_vista_s=3.0)
+    s.empezar(0.0)
+    s.avanzar(3.0, [AtaqueFalso(3.0 - 0.073, midi_a_hz(40))])
+    assert s.desfase_sugerido_ms == 73
+
+
+def test_el_desfase_sugerido_es_acumulativo():
+    """Sirve tal cual aunque la pasada ya viniera con desfase aplicado.
+
+    Si no acumulara, cada pasada propondria una correccion sobre la anterior
+    y el valor oscilaria en vez de converger.
+    """
+    from audio.notas import midi_a_hz
+    s = sesion(ventana_vista_s=3.0, desfase_s=0.050)
+    s.empezar(0.0)
+    s.avanzar(3.0, [AtaqueFalso(3.0 - 0.073, midi_a_hz(40))])
+    assert s.desfase_sugerido_ms == 73
+
+
+def test_sin_aciertos_no_hay_desfase_que_sugerir():
+    s = sesion()
+    s.empezar(0.0)
+    s.avanzar(1000.0)
+    assert s.resumen.aciertos == 0
+    assert s.desfase_sugerido_ms == 0

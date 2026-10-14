@@ -163,10 +163,24 @@ que el juego esta roto.
 python3 tocar.py                    # todas las pistas de pistas/
 python3 tocar.py --umbral 0.004     # el valor que sugiera --calibrar
 python3 tocar.py --vista 2.0        # menos segundos en pantalla
+python3 tocar.py --desfase-ms 73    # si te adelantas sistematicamente
 ```
+
+Si la pantalla de resultados dice que te adelantas o te atrasas siempre lo
+mismo, sugiere el `--desfase-ms` que lo centra. Es una compensacion personal,
+de como se sincroniza cada uno con lo que ve, y es distinta de
+`retardo_onset_s` del analizador, que corrige un sesgo de medicion del
+detector y se calibra contra señales con instante conocido. Confundirlas
+seria falsear los timestamps del detector para tapar un problema de pantalla.
 
 Controles: en el menu, flechas para elegir y Enter para tocar; jugando, Esc
 vuelve al menu; en resultados, Enter va al menu y R repite.
+
+La nota hay que tocarla cuando **llena la caja** de la linea de golpe. La caja
+mide lo mismo que una nota a proposito: con solo una linea no se sabia si el
+objetivo era el borde de la nota o su centro, y como el highway baja a unos
+139 px/s, el borde de abajo llega 94 ms antes que el centro. Eso se medio en
+la practica como un adelanto sistematico de 73 ms.
 
 Las notas bajan por seis carriles, uno por cuerda, con la 6a a la izquierda
 como en una tablatura mirada de frente. Los acordes ocupan los carriles de
