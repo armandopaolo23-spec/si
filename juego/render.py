@@ -49,6 +49,8 @@ CABECERA = 96
 MARGEN_CAJA = 4
 ALTO_CAJA = ALTO_NOTA + 2 * MARGEN_CAJA
 
+ALTO_FILA_MENU = 84
+
 # Diagrama de acorde del costado derecho, en el hueco que deja el highway.
 DIAGRAMA_CUERDAS = 6
 DIAGRAMA_FILAS = 4            # trastes visibles en la grilla
@@ -117,8 +119,16 @@ class Renderizador:
         self._texto("Flechas para elegir, Enter para tocar, Esc para salir",
                     (MARGEN_LATERAL, 118), self.fuente_chica, TEXTO_TENUE)
 
+        # Con pistas generadas la lista ya no entra entera: se muestra una
+        # ventana que sigue a la seleccion y se avisa que hay mas.
+        primero, ultimo = _ventana_menu(len(sesion.pistas), sesion.seleccion,
+                                        self._pistas_visibles())
+        if primero > 0:
+            self._texto(f"... {primero} mas arriba", (MARGEN_LATERAL, 160),
+                        self.fuente_chica, TEXTO_TENUE)
         y = 190
-        for indice, pista in enumerate(sesion.pistas):
+        for indice in range(primero, ultimo):
+            pista = sesion.pistas[indice]
             elegida = indice == sesion.seleccion
             rect = pygame.Rect(MARGEN_LATERAL - 20, y - 14,
                                self.ancho - 2 * MARGEN_LATERAL + 40, 62)
@@ -130,12 +140,23 @@ class Renderizador:
                         self.fuente, TEXTO if elegida else TEXTO_TENUE)
             notas = sum(1 for e in pista.eventos if e.tipo == "nota")
             acordes = len(pista.eventos) - notas
-            detalle = (f"{pista.bpm:g} bpm   {notas} notas"
-                       + (f"   {acordes} acordes" if acordes else "")
-                       + f"   {pista.duracion:.0f} s")
+            partes = [f"{pista.bpm:g} bpm"]
+            if notas:
+                partes.append(_plural(notas, "nota"))
+            if acordes:
+                partes.append(_plural(acordes, "acorde"))
+            partes.append(f"{pista.duracion:.0f} s")
+            detalle = "   ".join(partes)
             self._texto(detalle, (MARGEN_LATERAL, y + 28), self.fuente_chica,
                         TEXTO_TENUE)
-            y += 84
+            y += ALTO_FILA_MENU
+        if ultimo < len(sesion.pistas):
+            self._texto(f"... {len(sesion.pistas) - ultimo} mas abajo",
+                        (MARGEN_LATERAL, y - 6), self.fuente_chica, TEXTO_TENUE)
+
+    def _pistas_visibles(self):
+        """Cuantas filas del menu entran, dejando lugar para el aviso de abajo."""
+        return max(1, (self.alto - 190 - 40) // ALTO_FILA_MENU)
 
     def _juego(self, sesion):
         pista = sesion.pista_actual
@@ -467,6 +488,17 @@ def _texto_tiempo(error_s):
     if abs(ms) < 5:
         return "clavado en tiempo"
     return f"{abs(ms):.0f} ms {'tarde' if ms > 0 else 'temprano'}"
+
+
+def _ventana_menu(total, seleccion, visibles):
+    """(primero, ultimo) de las pistas a mostrar, con la elegida adentro.
+
+    Mantiene la seleccion centrada cuando se puede y no deja huecos al final.
+    """
+    if total <= visibles:
+        return 0, total
+    primero = min(max(seleccion - visibles // 2, 0), total - visibles)
+    return primero, primero + visibles
 
 
 def _plural(cantidad, singular):

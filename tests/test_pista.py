@@ -11,7 +11,8 @@ import pytest
 
 from audio.notas import CUERDAS_ESTANDAR, nombre_midi
 from nucleo.pista import (MIDI_MAXIMO, MIDI_MINIMO, EventoAcorde, EventoNota,
-                          Pista, PistaInvalida, cargar, desde_dict)
+                          Pista, PistaInvalida, advertencias_de_ritmo, cargar,
+                          desde_dict)
 
 
 def pista_minima(**cambios):
@@ -275,13 +276,6 @@ def test_las_pistas_de_ejemplo_son_validas(ruta):
     assert pista.duracion > 0
 
 
-# Un acorde no se lee, se arma, y eso lleva segundos: la mano tiene que
-# soltar la posicion anterior, encontrar la nueva y apretar. Las pistas de
-# ejemplo respetan este minimo para que se puedan seguir sin correr.
-SEGUNDOS_ENTRE_ACORDES = 6.0
-SEGUNDOS_PARA_SOLTAR_EL_ACORDE = 3.0
-
-
 def test_las_pistas_de_ejemplo_van_en_dificultad_creciente():
     rutas = sorted(glob.glob("pistas/*.json"))
     assert len(rutas) == 4
@@ -294,56 +288,56 @@ def test_las_pistas_de_ejemplo_van_en_dificultad_creciente():
 
 
 @pytest.mark.parametrize("ruta", sorted(glob.glob("pistas/*.json")))
-def test_los_acordes_dan_tiempo_a_armar_la_mano(ruta):
-    pista = cargar(ruta)
-    acordes = [e for e in pista.eventos if e.tipo == "acorde"]
-    huecos = [b.t - a.t for a, b in zip(acordes, acordes[1:])]
-    assert all(h >= SEGUNDOS_ENTRE_ACORDES for h in huecos), huecos
+def test_las_pistas_de_ejemplo_respetan_el_ritmo_para_principiantes(ruta):
+    """Son ejercicios para empezar: ninguna puede correr.
 
-
-@pytest.mark.parametrize("ruta", sorted(glob.glob("pistas/*.json")))
-def test_el_primer_acorde_tambien_da_tiempo(ruta):
-    """Es el que se arma en frio, asi que no puede ser el mas apurado.
-
-    Al empezar, el reloj de pista arranca en -ventana_vista, de modo que el
-    tiempo disponible es esa entrada mas el `t` del acorde.
+    Es la misma regla que usa el generador para avisar cuando una pista
+    generada sale mas rapida, asi que las de ejemplo y las generadas se
+    miden igual.
     """
     from juego.geometria import VENTANA_VISTA_S
-    pista = cargar(ruta)
-    acordes = [e for e in pista.eventos if e.tipo == "acorde"]
-    if not acordes:
-        return
-    assert VENTANA_VISTA_S + acordes[0].t >= SEGUNDOS_ENTRE_ACORDES
+    assert advertencias_de_ritmo(cargar(ruta), VENTANA_VISTA_S) == []
 
 
-@pytest.mark.parametrize("ruta", sorted(glob.glob("pistas/*.json")))
-def test_despues_de_un_acorde_hay_tiempo_antes_del_evento_siguiente(ruta):
-    """Soltar la posicion y llegar a la nota que viene tambien lleva tiempo."""
-    pista = cargar(ruta)
-    for anterior, siguiente in zip(pista.eventos, pista.eventos[1:]):
-        if anterior.tipo != "acorde":
-            continue
-        assert siguiente.t - anterior.t >= SEGUNDOS_PARA_SOLTAR_EL_ACORDE
+def pista_ritmo(*eventos):
+    return desde_dict({"titulo": "ritmo", "bpm": 60, "eventos": list(eventos)})
 
 
-@pytest.mark.parametrize("ruta", sorted(glob.glob("pistas/*.json")))
-def test_ninguna_pista_de_ejemplo_corre(ruta):
-    """Son ejercicios para empezar: nada mas rapido que una nota por segundo."""
-    pista = cargar(ruta)
-    huecos = [b.t - a.t for a, b in zip(pista.eventos, pista.eventos[1:])]
-    assert all(h >= 1.0 for h in huecos), min(huecos)
+EM_RITMO = [40, 47, 52, 55, 59, 64]
 
 
-def test_una_afinacion_invalida_no_inventa_errores_de_digitacion():
-    """Con la afinacion rota se usa la estandar de respaldo.
+def test_ritmo_tranquilo_no_avisa_nada():
+    pista = pista_ritmo(
+        {"t": 4.0, "dur": 3.0, "tipo": "acorde", "nombre": "Em", "notas": EM_RITMO},
+        {"t": 8.0, "dur": 1.0, "tipo": "nota", "midi": 64},
+        {"t": 11.0, "dur": 3.0, "tipo": "acorde", "nombre": "Em", "notas": EM_RITMO})
+    assert advertencias_de_ritmo(pista, 3.0) == []
 
-    Comparar la digitacion contra ese respaldo reportaria errores que la
-    pista no tiene, y taparia el error real, que es la afinacion.
-    """
-    datos = pista_minima(
-        afinacion=["E2", "A2"],
-        eventos=[{"t": 0.0, "dur": 1.0, "tipo": "nota", "midi": 64,
-                  "cuerda": 1, "traste": 7}])
-    errores = errores_de(datos)
-    assert any("afinacion" in e for e in errores)
-    assert not any("digitacion sugerida" in e for e in errores)
+
+def test_ritmo_avisa_notas_demasiado_juntas():
+    pista = pista_ritmo({"t": 0.0, "dur": 0.5, "tipo": "nota", "midi": 40},
+                        {"t": 0.5, "dur": 0.5, "tipo": "nota", "midi": 45})
+    avisos = advertencias_de_ritmo(pista, 3.0)
+    assert len(avisos) == 1 and "0.50 s" in avisos[0]
+
+
+def test_ritmo_avisa_acordes_demasiado_juntos():
+    pista = pista_ritmo(
+        {"t": 4.0, "dur": 3.0, "tipo": "acorde", "nombre": "Em", "notas": EM_RITMO},
+        {"t": 8.0, "dur": 3.0, "tipo": "acorde", "nombre": "Em", "notas": EM_RITMO})
+    assert any("4.00 s despues del Em" in a for a in advertencias_de_ritmo(pista, 3.0))
+
+
+def test_ritmo_avisa_poco_tiempo_para_soltar_un_acorde():
+    pista = pista_ritmo(
+        {"t": 4.0, "dur": 1.0, "tipo": "acorde", "nombre": "Em", "notas": EM_RITMO},
+        {"t": 5.5, "dur": 1.0, "tipo": "nota", "midi": 64})
+    assert any("soltar" in a for a in advertencias_de_ritmo(pista, 3.0))
+
+
+def test_ritmo_avisa_un_primer_acorde_apurado():
+    """El primero se arma en frio: entrada mas su t tiene que alcanzar."""
+    pista = pista_ritmo(
+        {"t": 0.0, "dur": 3.0, "tipo": "acorde", "nombre": "Em", "notas": EM_RITMO})
+    assert any("primer acorde" in a for a in advertencias_de_ritmo(pista, 3.0))
+    assert advertencias_de_ritmo(pista, 6.0) == []

@@ -18,6 +18,7 @@ import argparse
 import sys
 
 from audio.notas import hz_a_nota, nombre_midi
+from juego.geometria import digitacion_de_nota
 from nucleo.evaluador import (ACIERTO, AFINACION, EXTRA, Evaluador,
                               Tolerancias)
 from nucleo.pista import PistaInvalida, cargar
@@ -31,12 +32,17 @@ def columna_notas(evento):
     return " ".join(nombre_midi(midi) for midi in evento.notas)
 
 
-def columna_detalle(evento):
+def columna_detalle(evento, afinacion):
     if evento.tipo == "acorde":
         return f"acorde {evento.nombre}"
-    if evento.cuerda is None or evento.traste is None:
+    if evento.cuerda is not None and evento.traste is not None:
+        return f"{evento.cuerda}a cuerda, traste {evento.traste}"
+    # Sin sugerencia en la pista, la misma que va a mostrar el juego.
+    digitacion = digitacion_de_nota(evento.midi, afinacion)
+    if digitacion is None:
         return "digitacion libre"
-    return f"{evento.cuerda}a cuerda, traste {evento.traste}"
+    cuerda, traste = digitacion
+    return f"{cuerda}a cuerda, traste {traste} (automatica)"
 
 
 def mostrar(pista):
@@ -50,7 +56,8 @@ def mostrar(pista):
     for indice, evento in enumerate(pista.eventos):
         print(f"{indice:>3}  {evento.t:7.3f} {pista.pulso(evento.t):7.2f} "
               f"{evento.dur:6.2f}  {evento.tipo:<7} "
-              f"{columna_notas(evento):<26} {columna_detalle(evento)}")
+              f"{columna_notas(evento):<26} "
+              f"{columna_detalle(evento, pista.afinacion)}")
 
     notas = sum(1 for e in pista.eventos if e.tipo == "nota")
     acordes = len(pista.eventos) - notas

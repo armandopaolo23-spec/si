@@ -21,6 +21,9 @@ PUROS = [
     "nucleo/evaluador.py",
     "nucleo/puntaje.py",
     "nucleo/simulacion.py",
+    "nucleo/generador.py",
+    "nucleo/acordes.py",
+    "audio/croma.py",
     "juego/sesion.py",
     "juego/geometria.py",
 ]

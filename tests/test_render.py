@@ -286,3 +286,28 @@ def test_una_nota_sin_digitacion_posible_cae_en_el_nombre(pantalla):
     renderizador = Renderizador(pantalla, etiquetas=ETIQUETA_DIGITACION)
     assert renderizador._etiqueta(vista, pista.afinacion) == "E2"
     renderizador.dibujar(sesion)
+
+
+@pytest.mark.parametrize("total, seleccion, visibles, esperado", [
+    (3, 0, 4, (0, 3)),      # entra todo
+    (7, 0, 4, (0, 4)),      # arriba de todo
+    (7, 3, 4, (1, 5)),      # centrada
+    (7, 6, 4, (3, 7)),      # abajo de todo, sin huecos al final
+])
+def test_la_ventana_del_menu_sigue_a_la_seleccion(total, seleccion, visibles,
+                                                   esperado):
+    from juego.render import _ventana_menu
+    primero, ultimo = _ventana_menu(total, seleccion, visibles)
+    assert (primero, ultimo) == esperado
+    assert primero <= seleccion < ultimo
+
+
+def test_un_menu_con_muchas_pistas_se_dibuja_sin_desbordar(pantalla, pistas):
+    """Con pistas generadas la lista no entra entera en la ventana."""
+    muchas = pistas * 4
+    sesion = Sesion(muchas)
+    renderizador = Renderizador(pantalla)
+    for _ in range(len(muchas)):
+        renderizador.dibujar(sesion)
+        sesion.mover_seleccion(1)
+    assert 190 + renderizador._pistas_visibles() * 84 <= renderizador.alto
