@@ -36,10 +36,9 @@ def pantalla():
 
 @pytest.fixture
 def pistas():
-    return [cargar(ruta) for ruta in
-            ("pistas/01_cuerdas_al_aire.json",
-             "pistas/02_escala_do_mayor.json",
-             "pistas/03_acordes_y_melodia.json")]
+    """Todas las pistas que se entregan, para que agregar una quede cubierta."""
+    import glob
+    return [cargar(ruta) for ruta in sorted(glob.glob("pistas/*.json"))]
 
 
 def pinto_algo(superficie):
@@ -76,7 +75,7 @@ def test_la_entrada_antes_de_la_primera_nota_se_dibuja(pantalla, pistas):
     assert pinto_algo(pantalla)
 
 
-@pytest.mark.parametrize("indice", [0, 1, 2])
+@pytest.mark.parametrize("indice", [0, 1, 2, 3])
 def test_el_highway_se_dibuja_con_aciertos_fallos_y_extras(pantalla, pistas,
                                                            indice):
     pista = pistas[indice]
@@ -99,15 +98,20 @@ def test_el_highway_se_dibuja_con_aciertos_fallos_y_extras(pantalla, pistas,
     assert pinto_algo(pantalla)
 
 
-@pytest.mark.parametrize("indice", [0, 1, 2])
+@pytest.mark.parametrize("indice", [0, 1, 2, 3])
 def test_cada_cuadro_de_la_pista_entera_se_dibuja(pantalla, pistas, indice):
     """Recorre la pista de punta a punta dibujando: ningun instante revienta."""
+    from nucleo.evaluador import RETARDO_MOTOR_S
     pista = pistas[indice]
     sesion = Sesion([pista])
     sesion.empezar(0.0)
     renderizador = Renderizador(pantalla)
+    # El tope sale de la pista y no de un numero fijo: con uno fijo, alargar
+    # un ejercicio hacia fallar la prueba por quedarse corta de cuadros.
+    tope = int(60 * (pista.duracion + sesion.ventana_vista_s
+                     + RETARDO_MOTOR_S + 2.0))
     cuadro = 0
-    while sesion.estado == JUGANDO and cuadro < 60 * 40:
+    while sesion.estado == JUGANDO and cuadro < tope:
         sesion.avanzar(cuadro / 60)
         renderizador.dibujar(sesion)
         cuadro += 1
@@ -204,14 +208,16 @@ def test_el_bloque_del_acorde_lleva_solo_el_nombre(pantalla, pistas):
     con los dedos se lee de un golpe.
     """
     from juego.render import ETIQUETA_DIGITACION, ETIQUETA_NOTAS
-    sesion = Sesion([pistas[2]], ventana_vista_s=3.0)
+    pista = pistas[2]
+    primer_acorde = next(e for e in pista.eventos if e.tipo == "acorde")
+    sesion = Sesion([pista], ventana_vista_s=3.0)
     sesion.empezar(0.0)
-    sesion.avanzar(3.0)
-    vista = next(n for n in sesion.notas_en_vista() if n.indice == 0)
-    assert vista.evento.tipo == "acorde"
+    sesion.avanzar(3.0 + primer_acorde.t)       # el acorde llega a la linea
+    vista = next(n for n in sesion.notas_en_vista()
+                 if n.evento is primer_acorde)
     for modo in (ETIQUETA_DIGITACION, ETIQUETA_NOTAS):
         assert Renderizador(pantalla, etiquetas=modo)._etiqueta(
-            vista, pistas[2].afinacion) == "Em"
+            vista, pista.afinacion) == primer_acorde.nombre
 
 
 def test_el_diagrama_de_acorde_se_dibuja(pantalla, pistas):

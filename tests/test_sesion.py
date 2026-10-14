@@ -284,7 +284,8 @@ def test_una_pasada_perfecta_de_punta_a_punta():
     paso = 1.0 / 60
     from nucleo.evaluador import RETARDO_MOTOR_S
     cuadro = 0
-    while s.estado == JUGANDO and cuadro < 60 * 30:
+    tope = int(60 * (pista.duracion + 3.0 + RETARDO_MOTOR_S + 2.0))
+    while s.estado == JUGANDO and cuadro < tope:
         t_audio = cuadro * paso
         t_pista = t_audio - 3.0
         listos = [d for d in pendientes if d.t + RETARDO_MOTOR_S <= t_pista]
@@ -352,32 +353,36 @@ def test_una_pista_de_solo_punteo_no_tiene_acorde_que_mostrar():
 
 
 def test_el_diagrama_muestra_el_acorde_que_viene():
-    pista = cargar("pistas/03_acordes_y_melodia.json")
+    """Desde el arranque, antes incluso de que el acorde entre en pantalla."""
+    pista = cargar("pistas/04_acordes_y_melodia.json")
     s = sesion([pista], ventana_vista_s=3.0)
     s.empezar(0.0)
-    s.avanzar(3.0)                       # t_pista = 0.0, primer acorde Em
-    assert s.acorde_a_la_vista().nombre == "Em"
+    s.avanzar(3.0)
+    primero = next(e for e in pista.eventos if e.tipo == "acorde")
+    assert s.acorde_a_la_vista() is primero
 
 
 def test_el_acorde_sigue_visible_un_rato_despues_de_tocarlo():
     """Para poder comprobar la posicion de la mano recien hecha."""
-    pista = cargar("pistas/03_acordes_y_melodia.json")
+    pista = cargar("pistas/04_acordes_y_melodia.json")
+    primero = next(e for e in pista.eventos if e.tipo == "acorde")
     s = sesion([pista], ventana_vista_s=3.0)
     s.empezar(0.0)
-    s.avanzar(3.0 + 0.3)
-    assert s.acorde_a_la_vista().nombre == "Em"
+    s.avanzar(3.0 + primero.t + 0.3)
+    assert s.acorde_a_la_vista() is primero
 
 
 def test_el_diagrama_pasa_al_acorde_siguiente():
-    pista = cargar("pistas/03_acordes_y_melodia.json")
+    pista = cargar("pistas/04_acordes_y_melodia.json")
+    acordes = [e for e in pista.eventos if e.tipo == "acorde"]
     s = sesion([pista], ventana_vista_s=3.0)
     s.empezar(0.0)
-    s.avanzar(3.0 + 2.0)                 # ya paso el Em, viene el Am en t=4
-    assert s.acorde_a_la_vista().nombre == "Am"
+    s.avanzar(3.0 + acordes[0].t + 1.0)   # el primero ya quedo atras
+    assert s.acorde_a_la_vista() is acordes[1]
 
 
 def test_al_final_de_la_pista_ya_no_hay_acorde():
-    pista = cargar("pistas/03_acordes_y_melodia.json")
+    pista = cargar("pistas/04_acordes_y_melodia.json")
     s = sesion([pista], ventana_vista_s=3.0)
     s.empezar(0.0)
     s.avanzar(3.0 + pista.duracion + 1.0)

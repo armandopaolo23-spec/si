@@ -1,0 +1,17 @@
+{
+  "titulo": "Ejercicio 3 - acordes basicos, sin apuro",
+  "bpm": 60,
+  "afinacion": ["E2", "A2", "D3", "G3", "B3", "E4"],
+  "eventos": [
+    {"t":   4.0, "dur": 4.0, "tipo": "acorde", "nombre": "Em",
+     "notas": [40, 47, 52, 55, 59, 64]},
+    {"t":  11.0, "dur": 4.0, "tipo": "acorde", "nombre": "Am",
+     "notas": [45, 52, 57, 60, 64]},
+    {"t":  18.0, "dur": 4.0, "tipo": "acorde", "nombre": "C",
+     "notas": [48, 52, 55, 60, 64]},
+    {"t":  25.0, "dur": 4.0, "tipo": "acorde", "nombre": "G",
+     "notas": [43, 47, 50, 55, 59, 67]},
+    {"t":  32.0, "dur": 5.0, "tipo": "acorde", "nombre": "Em",
+     "notas": [40, 47, 52, 55, 59, 64]}
+  ]
+}

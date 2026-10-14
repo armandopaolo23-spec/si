@@ -46,7 +46,7 @@ Las pruebas no usan microfono ni audio grabado: todas las señales se
 sintetizan dentro de `tests/sintesis.py`.
 
 ```bash
-python3 -m pytest tests/ -q          # 367 pruebas, ~8 s
+python3 -m pytest tests/ -q          # 391 pruebas, ~9 s
 ```
 
 Con la guitarra, una linea por cada pulsacion detectada:
@@ -265,9 +265,10 @@ juego/
   render.py      dibujo con pygame
   aplicacion.py  bucle principal: audio, sesion y render
 pistas/
-  01_cuerdas_al_aire.json      seis cuerdas al aire, 60 bpm
-  02_escala_do_mayor.json      escala de Do mayor, 80 bpm
-  03_acordes_y_melodia.json    Em Am C G con melodia, 90 bpm
+  01_cuerdas_al_aire.json      seis cuerdas al aire, una cada 2.5 s
+  02_escala_do_mayor.json      escala de Do mayor, una nota por segundo
+  03_acordes_basicos.json      solo acordes, 7 s entre cambio y cambio
+  04_acordes_y_melodia.json    Em Am C G con melodia entre medio
 tests/
   sintesis.py    generador de pulsaciones de guitarra para las pruebas
 detector_notas.py  CLI de diagnostico (ataques, afinador, calibrar)

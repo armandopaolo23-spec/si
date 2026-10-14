@@ -275,17 +275,63 @@ def test_las_pistas_de_ejemplo_son_validas(ruta):
     assert pista.duracion > 0
 
 
-def test_hay_tres_pistas_de_ejemplo_de_dificultad_creciente():
+# Un acorde no se lee, se arma, y eso lleva segundos: la mano tiene que
+# soltar la posicion anterior, encontrar la nueva y apretar. Las pistas de
+# ejemplo respetan este minimo para que se puedan seguir sin correr.
+SEGUNDOS_ENTRE_ACORDES = 6.0
+SEGUNDOS_PARA_SOLTAR_EL_ACORDE = 3.0
+
+
+def test_las_pistas_de_ejemplo_van_en_dificultad_creciente():
     rutas = sorted(glob.glob("pistas/*.json"))
-    assert len(rutas) == 3
+    assert len(rutas) == 4
     pistas = [cargar(ruta) for ruta in rutas]
-    # Mas bpm y mas eventos a medida que avanzan.
-    assert [p.bpm for p in pistas] == sorted(p.bpm for p in pistas)
-    assert [len(p.eventos) for p in pistas] == \
-        sorted(len(p.eventos) for p in pistas)
-    # Solo la ultima tiene acordes.
     con_acordes = [any(e.tipo == "acorde" for e in p.eventos) for p in pistas]
-    assert con_acordes == [False, False, True]
+    # Primero solo punteo, despues solo acordes, y recien al final mezclados.
+    assert con_acordes == [False, False, True, True]
+    assert all(e.tipo == "acorde" for e in pistas[2].eventos)
+    assert any(e.tipo == "nota" for e in pistas[3].eventos)
+
+
+@pytest.mark.parametrize("ruta", sorted(glob.glob("pistas/*.json")))
+def test_los_acordes_dan_tiempo_a_armar_la_mano(ruta):
+    pista = cargar(ruta)
+    acordes = [e for e in pista.eventos if e.tipo == "acorde"]
+    huecos = [b.t - a.t for a, b in zip(acordes, acordes[1:])]
+    assert all(h >= SEGUNDOS_ENTRE_ACORDES for h in huecos), huecos
+
+
+@pytest.mark.parametrize("ruta", sorted(glob.glob("pistas/*.json")))
+def test_el_primer_acorde_tambien_da_tiempo(ruta):
+    """Es el que se arma en frio, asi que no puede ser el mas apurado.
+
+    Al empezar, el reloj de pista arranca en -ventana_vista, de modo que el
+    tiempo disponible es esa entrada mas el `t` del acorde.
+    """
+    from juego.geometria import VENTANA_VISTA_S
+    pista = cargar(ruta)
+    acordes = [e for e in pista.eventos if e.tipo == "acorde"]
+    if not acordes:
+        return
+    assert VENTANA_VISTA_S + acordes[0].t >= SEGUNDOS_ENTRE_ACORDES
+
+
+@pytest.mark.parametrize("ruta", sorted(glob.glob("pistas/*.json")))
+def test_despues_de_un_acorde_hay_tiempo_antes_del_evento_siguiente(ruta):
+    """Soltar la posicion y llegar a la nota que viene tambien lleva tiempo."""
+    pista = cargar(ruta)
+    for anterior, siguiente in zip(pista.eventos, pista.eventos[1:]):
+        if anterior.tipo != "acorde":
+            continue
+        assert siguiente.t - anterior.t >= SEGUNDOS_PARA_SOLTAR_EL_ACORDE
+
+
+@pytest.mark.parametrize("ruta", sorted(glob.glob("pistas/*.json")))
+def test_ninguna_pista_de_ejemplo_corre(ruta):
+    """Son ejercicios para empezar: nada mas rapido que una nota por segundo."""
+    pista = cargar(ruta)
+    huecos = [b.t - a.t for a, b in zip(pista.eventos, pista.eventos[1:])]
+    assert all(h >= 1.0 for h in huecos), min(huecos)
 
 
 def test_una_afinacion_invalida_no_inventa_errores_de_digitacion():
