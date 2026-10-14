@@ -10,7 +10,8 @@ from audio.notas import nombre_midi
 from juego.geometria import (digitacion_de_acorde, digitacion_de_nota,
                              indice_carril, posicion_relativa, tablatura)
 from juego.sesion import (ACERTADA, FALLADA, JUGANDO, MENU, RESULTADOS)
-from nucleo.evaluador import ACIERTO, EXTRA, FALLO
+from nucleo.evaluador import (ACIERTO, ACORDE_INCOMPLETO, AFINACION, EXTRA,
+                              FALLO, SIN_ALTURA, SIN_EVENTO)
 from nucleo.pista import CUERDAS
 
 ANCHO, ALTO = 960, 640
@@ -363,43 +364,54 @@ class Renderizador:
 
     def _resultados(self, sesion):
         resumen = sesion.resumen
-        self._texto("Resultados", (MARGEN_LATERAL, 70), self.fuente_titulo)
-        self._texto(sesion.pista_actual.titulo, (MARGEN_LATERAL, 118),
+        self._texto("Resultados", (MARGEN_LATERAL, 50), self.fuente_titulo)
+        self._texto(sesion.pista_actual.titulo, (MARGEN_LATERAL, 98),
                     self.fuente_chica, TEXTO_TENUE)
 
         precision = (100.0 * resumen.aciertos / resumen.total
                      if resumen.total else 0.0)
-        ms = 1000 * resumen.error_temporal_medio_s
         filas = [
             ("Puntaje", f"{sesion.puntaje}"),
             ("Aciertos", f"{resumen.aciertos} de {resumen.total}"
                          f"   ({precision:.0f}%)"),
             ("Fallos", f"{resumen.fallos}"),
-            ("Notas de mas", f"{resumen.extras}"),
+            ("Notas de mas", _texto_extras(resumen)),
             ("Racha maxima", f"{resumen.racha_maxima}"),
-            ("En promedio",
-             ("clavado en tiempo" if abs(ms) < 5 else
-              f"{abs(ms):.0f} ms {'tarde' if ms > 0 else 'temprano'}")),
-            ("Afinacion",
-             ("afinado" if abs(resumen.error_cents_medio) < 3 else
-              f"{abs(resumen.error_cents_medio):.0f} cents "
-              f"{'agudo' if resumen.error_cents_medio > 0 else 'grave'}")),
         ]
-        y = 180
+        # Notas y rasgueos tienen sesgos distintos y se compensan por
+        # separado, asi que se informan por separado.
+        if resumen.aciertos_notas:
+            filas.append(("Notas, en promedio",
+                          _texto_tiempo(resumen.error_temporal_notas_s)))
+        if resumen.aciertos_acordes:
+            filas.append(("Acordes, en promedio",
+                          _texto_tiempo(resumen.error_temporal_acordes_s)))
+        if resumen.aciertos_notas:
+            filas.append(("Afinacion",
+                          ("afinado" if abs(resumen.error_cents_medio) < 3 else
+                           f"{abs(resumen.error_cents_medio):.0f} cents "
+                           f"{'agudo' if resumen.error_cents_medio > 0 else 'grave'}")))
+
+        y = 150
         for etiqueta, valor in filas:
             self._texto(etiqueta, (MARGEN_LATERAL, y), self.fuente_chica,
                         TEXTO_TENUE)
             self._texto(valor, (MARGEN_LATERAL + 220, y - 2), self.fuente)
-            y += 42
+            y += 38
 
-        sugerido = sesion.desfase_sugerido_ms
-        if abs(sugerido) >= 20:
-            sentido = "adelantas" if sugerido > 0 else "atrasas"
-            self._texto(f"Te {sentido} de forma sistematica. Para compensarlo:",
-                        (MARGEN_LATERAL, y + 16), self.fuente_chica, AMBAR)
-            self._texto(f"python3 tocar.py --desfase-ms {sugerido}",
-                        (MARGEN_LATERAL, y + 40), self.fuente_chica, TEXTO)
-            y += 52
+        opciones = []
+        notas = sesion.desfase_sugerido_notas_ms
+        acordes = sesion.desfase_sugerido_acordes_ms
+        if notas is not None:
+            opciones.append(f"--desfase-ms {notas}")
+        if acordes is not None:
+            opciones.append(f"--desfase-acorde-ms {acordes}")
+        if opciones:
+            self._texto("Hay un desfase sistematico. Para compensarlo:",
+                        (MARGEN_LATERAL, y + 12), self.fuente_chica, AMBAR)
+            self._texto("python3 tocar.py " + " ".join(opciones),
+                        (MARGEN_LATERAL, y + 36), self.fuente_chica, TEXTO)
+            y += 48
 
         self._texto("Enter para volver al menu, R para repetir",
                     (MARGEN_LATERAL, y + 20), self.fuente_chica, TEXTO_TENUE)
@@ -422,6 +434,39 @@ class Renderizador:
         superficie = fuente.render(cadena, True, color)
         rect = superficie.get_rect(center=centro)
         self.pantalla.blit(superficie, rect)
+
+
+# Como se cuenta cada motivo de nota de mas: (singular, plural).
+NOMBRES_MOTIVO = {
+    SIN_ALTURA: ("no sono clara", "no sonaron claras"),
+    AFINACION: ("desafinada", "desafinadas"),
+    ACORDE_INCOMPLETO: ("acorde incompleto", "acordes incompletos"),
+    SIN_EVENTO: ("fuera de lugar", "fuera de lugar"),
+}
+
+
+def _texto_extras(resumen):
+    """'5  (3 no sonaron claras, 2 desafinadas)'.
+
+    Sin el desglose el numero no dice que corregir: una nota apagada se
+    arregla pisando mas fuerte y una desafinada afinando o soltando presion.
+    """
+    if not resumen.extras:
+        return "0"
+    detalle = sorted((resumen.extras_por_motivo or {}).items(),
+                     key=lambda par: -par[1])
+    partes = []
+    for motivo, cantidad in detalle:
+        singular, plural = NOMBRES_MOTIVO.get(motivo, (motivo, motivo))
+        partes.append(f"{cantidad} {singular if cantidad == 1 else plural}")
+    return f"{resumen.extras}   ({', '.join(partes)})"
+
+
+def _texto_tiempo(error_s):
+    ms = 1000 * error_s
+    if abs(ms) < 5:
+        return "clavado en tiempo"
+    return f"{abs(ms):.0f} ms {'tarde' if ms > 0 else 'temprano'}"
 
 
 def _plural(cantidad, singular):

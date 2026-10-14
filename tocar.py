@@ -78,8 +78,11 @@ def main():
                     help="que escribir sobre cada nota: la cuerda y el "
                          "traste (por defecto) o el nombre de la nota")
     ap.add_argument("--desfase-ms", type=float, default=0.0,
-                    help="cuantos ms te adelantas de forma sistematica; "
+                    help="cuantos ms te adelantas en las notas sueltas; "
                          "la pantalla de resultados sugiere el valor")
+    ap.add_argument("--desfase-acorde-ms", type=float, default=0.0,
+                    help="lo mismo para los rasgueos, que se miden aparte "
+                         "porque el barrido adelanta la primera cuerda")
     args = ap.parse_args()
 
     try:
@@ -106,7 +109,9 @@ def main():
             pistas, dispositivo=args.dispositivo, sr=args.sr,
             umbral_ruido=args.umbral, tolerancias=tolerancias,
             ventana_vista_s=args.vista,
-            desfase_s=args.desfase_ms / 1000.0, etiquetas=args.etiquetas)
+            desfase_s=args.desfase_ms / 1000.0,
+            desfase_acorde_s=args.desfase_acorde_ms / 1000.0,
+            etiquetas=args.etiquetas)
     except RuntimeError as error:
         print(error, file=sys.stderr)
         sys.exit(1)

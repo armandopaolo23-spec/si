@@ -4,8 +4,8 @@ import pytest
 
 from audio.notas import midi_a_hz
 from nucleo.evaluador import (ACIERTO, ACORDE_INCOMPLETO, AFINACION, EXTRA,
-                              FALLO, RETARDO_MOTOR_S, SIN_EVENTO, Deteccion,
-                              Evaluador, Tolerancias)
+                              FALLO, RETARDO_MOTOR_S, SIN_ALTURA, SIN_EVENTO,
+                              Compensacion, Deteccion, Evaluador, Tolerancias)
 from nucleo.pista import desde_dict
 from nucleo.simulacion import energias_de
 
@@ -423,3 +423,72 @@ def test_entre_varios_candidatos_desafinados_señala_el_menos_desviado():
                  if r.tipo == EXTRA)
     assert extra.motivo == AFINACION
     assert extra.indice == 1
+
+
+
+# ------------------------------------------------- golpes sin altura clara
+
+def test_un_golpe_sin_altura_donde_se_pedia_una_nota_lo_dice():
+    """Cuerda mal pisada o traste que zumba: sono algo, pero sin nota.
+
+    Desde que los ataques traen energias ya no se descartan en silencio, y
+    antes de este motivo salian como "nada pedido ahi" aunque hubiera una
+    nota pedida en ese mismo instante.
+    """
+    ev = Evaluador(pista_de(nota(1.0, 53)))
+    resultados = ev.avanzar(DESPUES, [Deteccion(t=1.0, energias=energias_de([53]))])
+    extra = next(r for r in resultados if r.tipo == EXTRA)
+    assert extra.motivo == SIN_ALTURA
+    assert extra.indice == 0
+
+
+def test_un_golpe_sin_altura_lejos_de_todo_sigue_siendo_sin_evento():
+    ev = Evaluador(pista_de(nota(1.0, 53)))
+    resultados = ev.avanzar(DESPUES, [Deteccion(t=5.0, energias=energias_de([53]))])
+    extra = next(r for r in resultados if r.tipo == EXTRA)
+    assert extra.motivo == SIN_EVENTO
+
+
+def test_el_resumen_cuenta_las_notas_de_mas_por_motivo():
+    ev = Evaluador(pista_de(nota(1.0, 40), nota(3.0, 45), nota(5.0, 50)))
+    ev.avanzar(DESPUES, [
+        Deteccion(t=1.0, energias=energias_de([40])),   # sin altura
+        deteccion(3.0, 45, 50.0),                        # desafinada
+        deteccion(8.0, 50),                              # fuera de lugar
+    ])
+    assert ev.resumen.extras_por_motivo == {
+        SIN_ALTURA: 1, AFINACION: 1, SIN_EVENTO: 1}
+
+
+# -------------------------------------------- compensacion por tipo de evento
+
+def test_la_compensacion_de_notas_no_toca_los_acordes():
+    compensacion = Compensacion(nota_s=0.1, acorde_s=0.0)
+    ev = Evaluador(pista_de(nota(1.0, 40), acorde(3.0, EM, nombre="Em")),
+                   compensacion=compensacion)
+    ev.avanzar(DESPUES, [deteccion(0.9, 40), rasgueo(3.0, EM)])
+    resumen = ev.resumen
+    assert resumen.aciertos == 2
+    assert resumen.error_temporal_notas_s == pytest.approx(0.0, abs=1e-9)
+    assert resumen.error_temporal_acordes_s == pytest.approx(0.0, abs=1e-9)
+
+
+def test_la_compensacion_de_acordes_no_toca_las_notas():
+    compensacion = Compensacion(nota_s=0.0, acorde_s=0.109)
+    ev = Evaluador(pista_de(nota(1.0, 40), acorde(3.0, EM, nombre="Em")),
+                   compensacion=compensacion)
+    ev.avanzar(DESPUES, [deteccion(1.0, 40), rasgueo(3.0 - 0.109, EM)])
+    resumen = ev.resumen
+    assert resumen.error_temporal_notas_s == pytest.approx(0.0, abs=1e-9)
+    assert resumen.error_temporal_acordes_s == pytest.approx(0.0, abs=1e-9)
+
+
+def test_con_compensacion_negativa_la_ventana_espera_lo_que_haga_falta():
+    """Quien se atrasa 150 ms: su deteccion entra en la ventana despues de
+    compensada, pero llega mas tarde de lo que cubre el retardo del motor.
+    Si la ventana se cerrara antes, seria un fallo inventado."""
+    ev = Evaluador(pista_de(nota(1.0, 40)),
+                   compensacion=Compensacion(nota_s=-0.15))
+    llega = 1.15 + RETARDO_MOTOR_S
+    assert ev.avanzar(llega - 0.001) == ()
+    assert tipos(ev.avanzar(llega, [deteccion(1.15, 40)])) == [ACIERTO]

@@ -24,7 +24,8 @@ from juego.geometria import (MARGEN_SALIDA_S, VENTANA_VISTA_S,
                              asignacion_de_acorde, carril_de_nota,
                              carriles_de_evento, en_vista)
 from nucleo.evaluador import (ACIERTO, ACORDE_INCOMPLETO, AFINACION, EXTRA,
-                              FALLO, Deteccion, Evaluador, Tolerancias)
+                              FALLO, SIN_ALTURA, Compensacion, Deteccion,
+                              Evaluador, Tolerancias)
 from nucleo.puntaje import puntos_por_acierto
 
 MENU = "menu"
@@ -36,6 +37,13 @@ ACERTADA = "acertada"
 FALLADA = "fallada"
 
 DURACION_AVISO_S = 0.7      # cuanto queda en pantalla una devolucion
+
+# Cuando vale la pena sugerir un desfase. El detector ya tiene unos 20 ms de
+# error propio en el timestamp y una pasada corta suma jitter de quien toca:
+# con la guitarra real, dos pasadas de notas sueltas dieron 26 y 8 ms. Por
+# debajo de esto la sugerencia seria ajustar ruido.
+DESFASE_MINIMO_SUGERIBLE_MS = 40
+ACIERTOS_MINIMOS_PARA_SUGERIR = 5
 MS_PERFECTO = 30.0          # por debajo de esto el acierto se llama perfecto
 CENTS_PERFECTO = 12.0
 
@@ -63,19 +71,20 @@ class Aviso:
 
 class Sesion:
     def __init__(self, pistas, tolerancias=None,
-                 ventana_vista_s=VENTANA_VISTA_S, desfase_s=0.0):
+                 ventana_vista_s=VENTANA_VISTA_S, desfase_s=0.0,
+                 desfase_acorde_s=0.0):
         if not pistas:
             raise ValueError("la sesion necesita al menos una pista")
         self.pistas = tuple(pistas)
         self.tolerancias = tolerancias or Tolerancias()
         self.ventana_vista_s = ventana_vista_s
-        # Compensacion personal: cuanto se corre cada deteccion antes de
-        # compararla. Positivo = quien toca se adelanta, asi que se empujan
-        # hacia adelante. Es distinto de retardo_onset_s del analizador: ese
-        # corrige un sesgo de medicion del detector y se calibra contra
-        # señales con instante conocido; este corrige como se sincroniza una
-        # persona con lo que ve en pantalla, y es distinto para cada una.
+        # Compensacion personal, separada para notas y acordes (ver
+        # nucleo.evaluador.Compensacion). Es distinta de retardo_onset_s del
+        # analizador: ese corrige un sesgo de medicion del detector y se
+        # calibra contra señales con instante conocido; esta corrige como se
+        # sincroniza una persona con lo que ve, y es distinta para cada una.
         self.desfase_s = desfase_s
+        self.desfase_acorde_s = desfase_acorde_s
 
         self.estado = MENU
         self.seleccion = 0
@@ -105,8 +114,10 @@ class Sesion:
         self.puntaje = 0
         self.avisos = []
         self._estados = {}
-        self._evaluador = Evaluador(self.pista_actual,
-                                    tolerancias=self.tolerancias)
+        self._evaluador = Evaluador(
+            self.pista_actual, tolerancias=self.tolerancias,
+            compensacion=Compensacion(nota_s=self.desfase_s,
+                                      acorde_s=self.desfase_acorde_s))
         # El reloj de pista empieza en negativo para que la primera nota
         # entre por arriba justo ahora.
         self._t_inicio = t_audio + self.ventana_vista_s
@@ -120,7 +131,7 @@ class Sesion:
         self.t_pista = t_audio - self._t_inicio
         detecciones = []
         for ataque in ataques:
-            t = ataque.t - self._t_inicio + self.desfase_s
+            t = ataque.t - self._t_inicio
             # Lo que suena durante la entrada, antes de la primera nota, no
             # se evalua: seria afinar o acomodarse, no tocar la pista.
             if t >= -self.tolerancias.temporal_s:
@@ -182,16 +193,22 @@ class Sesion:
         return self._evaluador.resumen if self._evaluador else None
 
     @property
-    def desfase_sugerido_ms(self):
-        """Compensacion que centraria el sesgo temporal medido, en ms.
-
-        Suma la compensacion ya aplicada, asi que el valor sirve tal cual
-        aunque se venga de una pasada que ya usaba desfase.
-        """
+    def desfase_sugerido_notas_ms(self):
+        """--desfase-ms que centraria las notas sueltas, o None si no hace falta."""
         resumen = self.resumen
-        if resumen is None or not resumen.aciertos:
-            return 0
-        return round(1000 * (self.desfase_s - resumen.error_temporal_medio_s))
+        if resumen is None:
+            return None
+        return _sugerir(self.desfase_s, resumen.error_temporal_notas_s,
+                        resumen.aciertos_notas)
+
+    @property
+    def desfase_sugerido_acordes_ms(self):
+        """--desfase-acorde-ms que centraria los rasgueos, o None."""
+        resumen = self.resumen
+        if resumen is None:
+            return None
+        return _sugerir(self.desfase_acorde_s, resumen.error_temporal_acordes_s,
+                        resumen.aciertos_acordes)
 
     @property
     def progreso(self):
@@ -241,6 +258,8 @@ class Sesion:
         return f"{resultado.error_cents:+.0f} cents"
 
     def _texto_extra(self, resultado):
+        if resultado.motivo == SIN_ALTURA:
+            return "no sono clara"
         if resultado.motivo == ACORDE_INCOMPLETO:
             faltantes = self._cuerdas_faltantes(resultado)
             if faltantes:
@@ -278,3 +297,18 @@ class Sesion:
     def _podar_avisos(self):
         limite = self.t_pista - DURACION_AVISO_S
         self.avisos = [a for a in self.avisos if a.t_pista > limite]
+
+
+def _sugerir(desfase_s, error_medio_s, aciertos):
+    """Desfase total que centraria el sesgo, en ms, o None si no vale la pena.
+
+    Es acumulativo: el error medido ya viene con la compensacion aplicada,
+    asi que el valor sirve tal cual y encadenando pasadas converge en vez de
+    oscilar. Se decide sobre el error residual y no sobre el total: si la
+    compensacion actual ya lo centra, no hay nada que sugerir.
+    """
+    if aciertos < ACIERTOS_MINIMOS_PARA_SUGERIR:
+        return None
+    if abs(1000 * error_medio_s) < DESFASE_MINIMO_SUGERIBLE_MS:
+        return None
+    return round(1000 * (desfase_s - error_medio_s))

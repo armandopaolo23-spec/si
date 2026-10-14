@@ -173,9 +173,36 @@ def test_los_resultados_sugieren_el_desfase(pantalla, pistas):
         t = 3.0 + evento.t - 0.073
         sesion.avanzar(3.0 + evento.t, [AtaqueFalso(t, midi_a_hz(evento.midi))])
     sesion.avanzar(1000.0)
-    assert sesion.desfase_sugerido_ms == 73
+    assert sesion.desfase_sugerido_notas_ms == 73
     Renderizador(pantalla).dibujar(sesion)
     assert pinto_algo(pantalla)
+
+
+def test_el_desglose_de_notas_de_mas_dice_por_que():
+    """Sin el desglose el numero no dice que corregir."""
+    from juego.render import _texto_extras
+    from nucleo.evaluador import AFINACION, SIN_ALTURA, Resumen
+    resumen = Resumen(total=15, aciertos=12, fallos=3, extras=5, racha=0,
+                      racha_maxima=6, error_temporal_medio_s=0.0,
+                      error_cents_medio=0.0,
+                      extras_por_motivo={SIN_ALTURA: 3, AFINACION: 2})
+    texto = _texto_extras(resumen)
+    assert texto.startswith("5")
+    assert "3 no sonaron claras" in texto
+    assert "2 desafinadas" in texto
+    assert texto.index("3 no sonaron") < texto.index("2 desafinadas")
+
+
+def test_el_desglose_respeta_el_singular():
+    from juego.render import _texto_extras
+    from nucleo.evaluador import AFINACION, SIN_ALTURA, Resumen
+    resumen = Resumen(total=5, aciertos=4, fallos=1, extras=2, racha=0,
+                      racha_maxima=4, error_temporal_medio_s=0.0,
+                      error_cents_medio=0.0,
+                      extras_por_motivo={SIN_ALTURA: 1, AFINACION: 1})
+    texto = _texto_extras(resumen)
+    assert "1 no sono clara" in texto
+    assert "1 desafinada" in texto and "desafinadas" not in texto
 
 
 def test_por_defecto_la_nota_dice_cuerda_y_traste(pantalla, pistas):

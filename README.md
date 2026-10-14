@@ -46,7 +46,7 @@ Las pruebas no usan microfono ni audio grabado: todas las señales se
 sintetizan dentro de `tests/sintesis.py`.
 
 ```bash
-python3 -m pytest tests/ -q          # 429 pruebas, ~11 s
+python3 -m pytest tests/ -q          # 442 pruebas, ~11 s
 ```
 
 Con la guitarra, una linea por cada pulsacion detectada:
@@ -163,16 +163,31 @@ que el juego esta roto.
 python3 tocar.py                    # todas las pistas de pistas/
 python3 tocar.py --umbral 0.004     # el valor que sugiera --calibrar
 python3 tocar.py --vista 2.0        # menos segundos en pantalla
-python3 tocar.py --desfase-ms 73    # si te adelantas sistematicamente
+python3 tocar.py --desfase-acorde-ms 109   # compensar el barrido del rasgueo
 python3 tocar.py --etiquetas notas  # nombres de nota en vez de cuerda/traste
 ```
 
-Si la pantalla de resultados dice que te adelantas o te atrasas siempre lo
-mismo, sugiere el `--desfase-ms` que lo centra. Es una compensacion personal,
-de como se sincroniza cada uno con lo que ve, y es distinta de
-`retardo_onset_s` del analizador, que corrige un sesgo de medicion del
-detector y se calibra contra señales con instante conocido. Confundirlas
-seria falsear los timestamps del detector para tapar un problema de pantalla.
+La pantalla de resultados informa el desfase de las notas sueltas y el de
+los rasgueos por separado, y si alguno es sistematico sugiere el comando que
+lo centra: `--desfase-ms` para las notas y `--desfase-acorde-ms` para los
+acordes. Van separados porque se midieron distintos con la guitarra real:
+las notas sueltas salian 8-26 ms adelantadas y los rasgueos 109 ms. En un
+rasgueo el detector marca la primera cuerda del barrido, y si la intencion es
+que el golpe caiga en la caja, esa cuerda suena antes. Un desfase unico
+calibrado con acordes dejaria las notas unos 90 ms tarde.
+
+Solo se sugiere cuando hay al menos 5 aciertos de ese tipo y el sesgo pasa de
+40 ms: el detector ya tiene unos 20 ms de error propio y una pasada corta suma
+jitter, asi que por debajo de eso seria ajustar ruido.
+
+Es una compensacion personal, distinta de `retardo_onset_s` del analizador,
+que corrige un sesgo de medicion del detector y se calibra contra señales con
+instante conocido. Confundirlas seria falsear los timestamps del detector
+para tapar un efecto de como se toca.
+
+Las notas de mas se desglosan por motivo: no sonaron claras (cuerda mal
+pisada, traste que zumba), desafinadas, acordes incompletos o fuera de lugar.
+Sin el desglose el numero no dice que corregir.
 
 Controles: en el menu, flechas para elegir y Enter para tocar; jugando, Esc
 vuelve al menu; en resultados, Enter va al menu y R repite.

@@ -47,6 +47,10 @@ EXTRA = "extra"
 SIN_EVENTO = "sin_evento"
 AFINACION = "afinacion"
 ACORDE_INCOMPLETO = "acorde_incompleto"
+# Hubo un golpe justo donde se pedia una nota, pero no sono con altura clara:
+# cuerda mal pisada, traste que zumba, nota apagada. Distinguirlo de una nota
+# ajena importa por lo mismo que AFINACION: se corrige de otra forma.
+SIN_ALTURA = "sin_altura"
 
 TOLERANCIA_TEMPORAL_S = 0.12
 # Un rasgueo no es un instante sino un barrido: las seis cuerdas no suenan
@@ -75,6 +79,30 @@ class Tolerancias:
 
 
 @dataclass(frozen=True)
+class Compensacion:
+    """Cuanto se corre cada deteccion antes de compararla, segun lo pedido.
+
+    Positivo = quien toca se adelanta, asi que se empuja hacia adelante.
+    Es una compensacion personal y va separada por tipo porque se midio
+    distinta: con la guitarra real las notas sueltas salian 8-26 ms
+    adelantadas y los rasgueos 109 ms. En un rasgueo el detector marca la
+    primera cuerda del barrido, y si la intencion es que el golpe caiga en
+    la caja, esa cuerda suena antes. Un desfase unico calibrado con acordes
+    dejaria las notas sueltas 90 ms tarde.
+
+    Se aplica segun el evento pedido y no segun la deteccion, porque es lo
+    unico que se sabe con certeza: un rasgueo a veces trae pitch y una nota
+    apagada a veces no.
+    """
+
+    nota_s: float = 0.0
+    acorde_s: float = 0.0
+
+    def para(self, evento):
+        return self.acorde_s if evento.tipo == "acorde" else self.nota_s
+
+
+@dataclass(frozen=True)
 class Deteccion:
     """Lo que entrega el motor de audio, reducido a lo que el evaluador usa.
 
@@ -98,7 +126,7 @@ class Resultado:
     deteccion: Deteccion = None
     error_s: float = None      # deteccion.t - evento.t; positivo = tarde
     error_cents: float = None  # positivo = mas agudo de lo pedido
-    motivo: str = None         # solo en un EXTRA: SIN_EVENTO o AFINACION
+    motivo: str = None         # solo en un EXTRA: por que no acerto
     faltantes: tuple = ()      # en un acorde, los midis que no sonaron
     nombre_oido: str = None    # en un acorde, a que acorde se parecio
 
@@ -118,6 +146,13 @@ class Resumen:
     racha_maxima: int
     error_temporal_medio_s: float  # positivo = se toca tarde de forma sistematica
     error_cents_medio: float       # positivo = se toca agudo de forma sistematica
+    # Separados porque notas y rasgueos tienen sesgos distintos, ver
+    # Compensacion. Cada promedio vale solo si su cantidad de aciertos alcanza.
+    aciertos_notas: int = 0
+    aciertos_acordes: int = 0
+    error_temporal_notas_s: float = 0.0
+    error_temporal_acordes_s: float = 0.0
+    extras_por_motivo: dict = None
 
 
 class Evaluador:
@@ -128,10 +163,12 @@ class Evaluador:
     tiron del hilo de render no adelanta el cierre de las ventanas.
     """
 
-    def __init__(self, pista, tolerancias=None, retardo_motor_s=RETARDO_MOTOR_S):
+    def __init__(self, pista, tolerancias=None, retardo_motor_s=RETARDO_MOTOR_S,
+                 compensacion=None):
         self.pista = pista
         self.tolerancias = tolerancias or Tolerancias()
         self.retardo_motor_s = retardo_motor_s
+        self.compensacion = compensacion or Compensacion()
 
         self._pendientes = list(range(len(pista.eventos)))
         self._aciertos = 0
@@ -140,7 +177,10 @@ class Evaluador:
         self._racha = 0
         self._racha_maxima = 0
         self._errores_s = []
+        self._errores_s_notas = []
+        self._errores_s_acordes = []
         self._errores_cents = []
+        self._extras_por_motivo = {}
 
     # ------------------------------------------------------------------ API
 
@@ -170,6 +210,11 @@ class Evaluador:
             racha_maxima=self._racha_maxima,
             error_temporal_medio_s=_promedio(self._errores_s),
             error_cents_medio=_promedio(self._errores_cents),
+            aciertos_notas=len(self._errores_s_notas),
+            aciertos_acordes=len(self._errores_s_acordes),
+            error_temporal_notas_s=_promedio(self._errores_s_notas),
+            error_temporal_acordes_s=_promedio(self._errores_s_acordes),
+            extras_por_motivo=dict(self._extras_por_motivo),
         )
 
     def eventos_pendientes(self):
@@ -193,12 +238,18 @@ class Evaluador:
             return False, None
         return abs(desviacion) <= self.tolerancias.cents, desviacion
 
+    def _t(self, deteccion, evento):
+        """Instante de la deteccion ya compensado para ese tipo de evento."""
+        return deteccion.t + self.compensacion.para(evento)
+
     def _emparejar(self, deteccion):
-        cercano = None        # nota que fallo solo por afinacion
+        cercano = None         # nota que fallo solo por afinacion
         acorde_fallado = None  # acorde que estaba ahi pero no sono completo
+        sin_altura = None      # nota pedida justo donde sono algo sin altura
         for indice in self._pendientes:
             evento = self.pista.eventos[indice]
-            if abs(deteccion.t - evento.t) > self.tolerancias.ventana(evento):
+            if abs(self._t(deteccion, evento) - evento.t) > \
+                    self.tolerancias.ventana(evento):
                 continue
 
             if evento.tipo == "acorde":
@@ -218,21 +269,27 @@ class Evaluador:
 
             acepta, desviacion = self._juzgar_nota(deteccion, evento)
             if desviacion is None:
+                if sin_altura is None:
+                    sin_altura = indice
                 continue
             if acepta:
                 return self._acertar(indice, deteccion, desviacion)
             if cercano is None or abs(desviacion) < abs(cercano[1]):
                 cercano = (indice, desviacion)
-        return self._extra(deteccion, cercano, acorde_fallado)
+        return self._extra(deteccion, cercano, acorde_fallado, sin_altura)
 
     def _acertar(self, indice, deteccion, desviacion, reconocimiento=None):
         self._pendientes.remove(indice)
         evento = self.pista.eventos[indice]
-        error_s = deteccion.t - evento.t
+        error_s = self._t(deteccion, evento) - evento.t
         self._aciertos += 1
         self._racha += 1
         self._racha_maxima = max(self._racha_maxima, self._racha)
         self._errores_s.append(error_s)
+        if evento.tipo == "acorde":
+            self._errores_s_acordes.append(error_s)
+        else:
+            self._errores_s_notas.append(error_s)
         # Un acorde no tiene una desviacion de afinacion que promediar: se
         # juzga por que notas suenan, no por cuanto se desvia una sola.
         if reconocimiento is None:
@@ -243,33 +300,51 @@ class Evaluador:
             faltantes=reconocimiento.faltantes if reconocimiento else (),
             nombre_oido=reconocimiento.nombre_oido if reconocimiento else None)
 
-    def _extra(self, deteccion, cercano=None, acorde_fallado=None):
+    def _extra(self, deteccion, cercano=None, acorde_fallado=None,
+               sin_altura=None):
         # Un extra no corta la racha. Con microfono integrado algunos falsos
         # positivos son inevitables, y castigarlos haria sentir el juego roto
         # cuando en realidad se toco bien.
         self._extras += 1
+        resultado = self._resultado_extra(deteccion, cercano, acorde_fallado,
+                                          sin_altura)
+        self._extras_por_motivo[resultado.motivo] = (
+            self._extras_por_motivo.get(resultado.motivo, 0) + 1)
+        return resultado
+
+    def _resultado_extra(self, deteccion, cercano, acorde_fallado, sin_altura):
+        """Arma el EXTRA con el motivo mas especifico que se pueda decir."""
         if acorde_fallado is not None:
             indice, reconocimiento = acorde_fallado
+            evento = self.pista.eventos[indice]
             return Resultado(tipo=EXTRA, indice=indice, deteccion=deteccion,
                              motivo=ACORDE_INCOMPLETO,
-                             error_s=deteccion.t - self.pista.eventos[indice].t,
+                             error_s=self._t(deteccion, evento) - evento.t,
                              faltantes=reconocimiento.faltantes,
                              nombre_oido=reconocimiento.nombre_oido)
-        if cercano is None:
-            return Resultado(tipo=EXTRA, deteccion=deteccion,
-                             motivo=SIN_EVENTO)
-        indice, desviacion = cercano
-        evento = self.pista.eventos[indice]
-        return Resultado(tipo=EXTRA, indice=indice, deteccion=deteccion,
-                         error_s=deteccion.t - evento.t,
-                         error_cents=desviacion, motivo=AFINACION)
+        if cercano is not None:
+            indice, desviacion = cercano
+            evento = self.pista.eventos[indice]
+            return Resultado(tipo=EXTRA, indice=indice, deteccion=deteccion,
+                             error_s=self._t(deteccion, evento) - evento.t,
+                             error_cents=desviacion, motivo=AFINACION)
+        if sin_altura is not None:
+            evento = self.pista.eventos[sin_altura]
+            return Resultado(tipo=EXTRA, indice=sin_altura, deteccion=deteccion,
+                             error_s=self._t(deteccion, evento) - evento.t,
+                             motivo=SIN_ALTURA)
+        return Resultado(tipo=EXTRA, deteccion=deteccion, motivo=SIN_EVENTO)
 
     def _cerrar_vencidas(self, t_actual):
-        limite = t_actual - self.retardo_motor_s
         resultados = []
         for indice in list(self._pendientes):
             evento = self.pista.eventos[indice]
-            if limite <= evento.t + self.tolerancias.ventana(evento):
+            # Con compensacion negativa (quien toca se atrasa) una deteccion
+            # puede caer dentro de la ventana despues de compensada pero
+            # llegar despues de lo que el retardo del motor solo cubre: hay
+            # que esperarla tambien.
+            espera = self.retardo_motor_s + max(0.0, -self.compensacion.para(evento))
+            if t_actual - espera <= evento.t + self.tolerancias.ventana(evento):
                 continue
             self._pendientes.remove(indice)
             self._fallos += 1

@@ -319,12 +319,40 @@ def test_el_desfase_corre_las_detecciones_antes_de_comparar():
                                                                  abs=1e-9)
 
 
-def test_el_desfase_sugerido_centra_el_sesgo():
+def tocar_notas_corridas(adelanto, desfase=0.0, cantidad=6):
+    """Toca una pista de notas sueltas, todas `adelanto` segundos antes."""
     from audio.notas import midi_a_hz
-    s = sesion(ventana_vista_s=3.0)
+    pista = pista_simple(cantidad=cantidad, paso=1.0)
+    s = sesion([pista], ventana_vista_s=3.0, desfase_s=desfase)
     s.empezar(0.0)
-    s.avanzar(3.0, [AtaqueFalso(3.0 - 0.073, midi_a_hz(40))])
-    assert s.desfase_sugerido_ms == 73
+    for evento in pista.eventos:
+        t = 3.0 + evento.t
+        s.avanzar(t, [AtaqueFalso(t - adelanto, midi_a_hz(evento.midi))])
+    s.avanzar(1000.0)
+    return s
+
+
+def tocar_pista_mixta(adelanto_notas, adelanto_acordes, desfase_acorde=0.0):
+    """La pista 4, con notas y rasgueos corridos cada uno a su manera."""
+    from audio.notas import midi_a_hz
+    from nucleo.simulacion import energias_de
+    pista = cargar("pistas/04_acordes_y_melodia.json")
+    s = sesion([pista], ventana_vista_s=3.0, desfase_acorde_s=desfase_acorde)
+    s.empezar(0.0)
+    for evento in pista.eventos:
+        t = 3.0 + evento.t
+        if evento.tipo == "acorde":
+            ataque = AtaqueFalso(t - adelanto_acordes,
+                                 energias=energias_de(evento.notas))
+        else:
+            ataque = AtaqueFalso(t - adelanto_notas, midi_a_hz(evento.midi))
+        s.avanzar(t, [ataque])
+    s.avanzar(1000.0)
+    return s
+
+
+def test_el_desfase_sugerido_centra_el_sesgo():
+    assert tocar_notas_corridas(0.073).desfase_sugerido_notas_ms == 73
 
 
 def test_el_desfase_sugerido_es_acumulativo():
@@ -333,11 +361,21 @@ def test_el_desfase_sugerido_es_acumulativo():
     Si no acumulara, cada pasada propondria una correccion sobre la anterior
     y el valor oscilaria en vez de converger.
     """
-    from audio.notas import midi_a_hz
-    s = sesion(ventana_vista_s=3.0, desfase_s=0.050)
-    s.empezar(0.0)
-    s.avanzar(3.0, [AtaqueFalso(3.0 - 0.073, midi_a_hz(40))])
-    assert s.desfase_sugerido_ms == 73
+    s = tocar_notas_corridas(0.120, desfase=0.030)
+    assert s.desfase_sugerido_notas_ms == 120
+
+
+def test_un_desfase_chico_no_se_sugiere():
+    """Es lo que paso con la guitarra real: 26 ms con seis notas.
+
+    El detector ya tiene unos 20 ms de error propio y una pasada corta suma
+    jitter; sugerir compensar eso seria ajustar ruido.
+    """
+    assert tocar_notas_corridas(0.026).desfase_sugerido_notas_ms is None
+
+
+def test_con_pocos_aciertos_no_se_sugiere_nada():
+    assert tocar_notas_corridas(0.073, cantidad=3).desfase_sugerido_notas_ms is None
 
 
 def test_sin_aciertos_no_hay_desfase_que_sugerir():
@@ -345,7 +383,41 @@ def test_sin_aciertos_no_hay_desfase_que_sugerir():
     s.empezar(0.0)
     s.avanzar(1000.0)
     assert s.resumen.aciertos == 0
-    assert s.desfase_sugerido_ms == 0
+    assert s.desfase_sugerido_notas_ms is None
+    assert s.desfase_sugerido_acordes_ms is None
+
+
+def test_notas_y_rasgueos_se_miden_y_se_sugieren_por_separado():
+    """El caso real: notas sueltas casi a tiempo, rasgueos 109 ms adelante.
+
+    Con un desfase unico calibrado con acordes, las notas quedarian unos
+    90 ms tarde. Por eso cada tipo tiene el suyo.
+    """
+    s = tocar_pista_mixta(adelanto_notas=0.010, adelanto_acordes=0.109)
+    resumen = s.resumen
+    assert resumen.aciertos == resumen.total
+    assert resumen.error_temporal_notas_s == pytest.approx(-0.010, abs=1e-6)
+    assert resumen.error_temporal_acordes_s == pytest.approx(-0.109, abs=1e-6)
+    assert s.desfase_sugerido_notas_ms is None
+    assert s.desfase_sugerido_acordes_ms == 109
+
+
+def test_compensar_los_acordes_no_mueve_las_notas():
+    s = tocar_pista_mixta(adelanto_notas=0.010, adelanto_acordes=0.109,
+                          desfase_acorde=0.109)
+    resumen = s.resumen
+    assert resumen.error_temporal_acordes_s == pytest.approx(0.0, abs=1e-6)
+    assert resumen.error_temporal_notas_s == pytest.approx(-0.010, abs=1e-6)
+    assert s.desfase_sugerido_acordes_ms is None
+
+
+def test_una_nota_que_no_suena_clara_lo_dice():
+    """Antes salia "rasgueo de mas" aunque hubiera una nota pedida ahi mismo."""
+    from nucleo.simulacion import energias_de
+    s = sesion(ventana_vista_s=3.0)
+    s.empezar(0.0)
+    s.avanzar(3.0, [AtaqueFalso(3.0, energias=energias_de([40]))])
+    assert "no sono clara" in [a.texto for a in s.avisos_vigentes()]
 
 
 # ------------------------------------------------------- diagrama de acorde
