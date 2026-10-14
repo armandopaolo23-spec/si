@@ -48,6 +48,14 @@ CABECERA = 96
 MARGEN_CAJA = 4
 ALTO_CAJA = ALTO_NOTA + 2 * MARGEN_CAJA
 
+# Diagrama de acorde del costado derecho, en el hueco que deja el highway.
+DIAGRAMA_CUERDAS = 6
+DIAGRAMA_FILAS = 4            # trastes visibles en la grilla
+DIAGRAMA_PASO = 21            # separacion entre cuerdas
+DIAGRAMA_ALTO_FILA = 25
+DIAGRAMA_Y = 190
+DIAGRAMA_RADIO = 8
+
 
 # Que se escribe sobre cada nota que baja.
 ETIQUETA_DIGITACION = "digitacion"   # "6a 0": cuerda y traste
@@ -135,6 +143,7 @@ class Renderizador:
         self._notas(sesion)
         self._avisos(sesion)
         self._cabecera(sesion)
+        self._diagrama(sesion)
         self._pie(sesion)
 
     def _carriles(self, pista):
@@ -155,9 +164,10 @@ class Renderizador:
         """
         evento = vista.evento
         if evento.tipo == "acorde":
-            if self.etiquetas == ETIQUETA_NOTAS:
-                return evento.nombre
-            return f"{evento.nombre}  {tablatura(digitacion_de_acorde(evento.notas, afinacion))}"
+            # Solo el nombre: como se arma la mano lo cuenta el diagrama del
+            # costado, que se lee mucho mejor que "x02210" sobre una barra
+            # que esta bajando.
+            return evento.nombre
         if self.etiquetas == ETIQUETA_NOTAS:
             return nombre_midi(evento.midi)
         digitacion = digitacion_de_nota(evento.midi, afinacion, evento.cuerda,
@@ -268,6 +278,75 @@ class Renderizador:
         color = ACENTO if fraccion < 0.2 else _oscurecer(ACENTO, 0.4)
         pygame.draw.circle(self.pantalla, color, (self.ancho // 2, 40), radio)
         self._centrado(f"pulso {int(pulso) + 1}", self.ancho // 2, 56,
+                       self.fuente_chica, TEXTO_TENUE)
+
+    def _diagrama(self, sesion):
+        """Diagrama del acorde que viene, en el hueco de la derecha.
+
+        Para rasguear, una grilla con los dedos se lee de un golpe; un texto
+        como "x02210" sobre la barra que baja hay que descifrarlo. Las notas
+        sueltas no lo necesitan: ya traen cuerda y traste encima.
+        """
+        evento = sesion.acorde_a_la_vista()
+        if evento is None:
+            return
+
+        trastes = digitacion_de_acorde(evento.notas,
+                                       sesion.pista_actual.afinacion)
+        if all(traste is None for traste in trastes):
+            # Sin digitacion posible es mejor no dibujar nada que dibujar una
+            # grilla vacia, que se leeria como "no se toca ninguna cuerda".
+            return
+        ancho = DIAGRAMA_PASO * (DIAGRAMA_CUERDAS - 1)
+        x0 = self.ancho - MARGEN_LATERAL + (MARGEN_LATERAL - ancho) / 2
+        y0 = DIAGRAMA_Y
+
+        # Si el acorde no es de posicion abierta, la grilla arranca en el
+        # traste mas bajo que se pisa y se indica cual es.
+        pisados = [t for t in trastes if t]
+        primero = 1
+        if pisados and max(pisados) > DIAGRAMA_FILAS:
+            primero = min(pisados)
+
+        self._centrado(evento.nombre, x0 + ancho / 2, y0 - 54, self.fuente)
+
+        # Cuerdas al aire y silenciadas, arriba de la grilla.
+        for indice, traste in enumerate(trastes):
+            if traste is None:
+                marca, color = "x", TEXTO_TENUE
+            elif traste == 0:
+                marca, color = "o", TEXTO
+            else:
+                continue
+            self._centrado(marca, x0 + indice * DIAGRAMA_PASO, y0 - 22,
+                           self.fuente_chica, color)
+
+        alto = DIAGRAMA_ALTO_FILA * DIAGRAMA_FILAS
+        for indice in range(DIAGRAMA_CUERDAS):
+            x = x0 + indice * DIAGRAMA_PASO
+            pygame.draw.line(self.pantalla, TEXTO_TENUE, (x, y0),
+                             (x, y0 + alto), 1)
+        for fila in range(DIAGRAMA_FILAS + 1):
+            y = y0 + fila * DIAGRAMA_ALTO_FILA
+            # La cejuela es gruesa y solo existe en posicion abierta.
+            grosor = 4 if (fila == 0 and primero == 1) else 1
+            pygame.draw.line(self.pantalla, TEXTO if grosor > 1 else TEXTO_TENUE,
+                             (x0, y), (x0 + ancho, y), grosor)
+        if primero > 1:
+            self._texto(f"{primero}fr", (x0 + ancho + 6, y0 - 6),
+                        self.fuente_chica, TEXTO_TENUE)
+
+        for indice, traste in enumerate(trastes):
+            if not traste:
+                continue
+            fila = traste - primero
+            if not 0 <= fila < DIAGRAMA_FILAS:
+                continue
+            centro = (int(x0 + indice * DIAGRAMA_PASO),
+                      int(y0 + (fila + 0.5) * DIAGRAMA_ALTO_FILA))
+            pygame.draw.circle(self.pantalla, ACENTO, centro, DIAGRAMA_RADIO)
+
+        self._centrado(tablatura(trastes), x0 + ancho / 2, y0 + alto + 12,
                        self.fuente_chica, TEXTO_TENUE)
 
     def _pie(self, sesion):

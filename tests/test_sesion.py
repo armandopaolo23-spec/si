@@ -340,3 +340,45 @@ def test_sin_aciertos_no_hay_desfase_que_sugerir():
     s.avanzar(1000.0)
     assert s.resumen.aciertos == 0
     assert s.desfase_sugerido_ms == 0
+
+
+# ------------------------------------------------------- diagrama de acorde
+
+def test_una_pista_de_solo_punteo_no_tiene_acorde_que_mostrar():
+    s = sesion([cargar("pistas/02_escala_do_mayor.json")], ventana_vista_s=3.0)
+    s.empezar(0.0)
+    s.avanzar(3.0)
+    assert s.acorde_a_la_vista() is None
+
+
+def test_el_diagrama_muestra_el_acorde_que_viene():
+    pista = cargar("pistas/03_acordes_y_melodia.json")
+    s = sesion([pista], ventana_vista_s=3.0)
+    s.empezar(0.0)
+    s.avanzar(3.0)                       # t_pista = 0.0, primer acorde Em
+    assert s.acorde_a_la_vista().nombre == "Em"
+
+
+def test_el_acorde_sigue_visible_un_rato_despues_de_tocarlo():
+    """Para poder comprobar la posicion de la mano recien hecha."""
+    pista = cargar("pistas/03_acordes_y_melodia.json")
+    s = sesion([pista], ventana_vista_s=3.0)
+    s.empezar(0.0)
+    s.avanzar(3.0 + 0.3)
+    assert s.acorde_a_la_vista().nombre == "Em"
+
+
+def test_el_diagrama_pasa_al_acorde_siguiente():
+    pista = cargar("pistas/03_acordes_y_melodia.json")
+    s = sesion([pista], ventana_vista_s=3.0)
+    s.empezar(0.0)
+    s.avanzar(3.0 + 2.0)                 # ya paso el Em, viene el Am en t=4
+    assert s.acorde_a_la_vista().nombre == "Am"
+
+
+def test_al_final_de_la_pista_ya_no_hay_acorde():
+    pista = cargar("pistas/03_acordes_y_melodia.json")
+    s = sesion([pista], ventana_vista_s=3.0)
+    s.empezar(0.0)
+    s.avanzar(3.0 + pista.duracion + 1.0)
+    assert s.acorde_a_la_vista() is None

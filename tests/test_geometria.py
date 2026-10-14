@@ -142,6 +142,53 @@ def test_digitacion_de_acordes_abiertos(nombre, notas, esperado):
     assert tablatura(digitacion_de_acorde(notas, CUERDAS_ESTANDAR)) == esperado
 
 
+@pytest.mark.parametrize("nombre, notas, esperado", [
+    ("F", [41, 48, 53, 57, 60, 65], "133211"),
+    ("Bm", [47, 54, 59, 62, 66], "x24432"),
+    ("B", [47, 54, 59, 63, 66], "x24442"),
+])
+def test_digitacion_de_acordes_con_cejilla(nombre, notas, esperado):
+    """Donde fallaba la version anterior.
+
+    Asignar cada nota a la cuerda libre mas comoda, sin exigir que el orden
+    de las cuerdas siga al de las notas, daba posiciones imposibles: un Bm
+    salia con la 3a cuerda en el traste 16 y la 4a en el 24.
+    """
+    assert tablatura(digitacion_de_acorde(notas, CUERDAS_ESTANDAR)) == esperado
+
+
+def test_las_cuerdas_que_suenan_van_en_orden_de_altura():
+    """Es la restriccion que hace tocable una digitacion: la nota mas grave
+    en la cuerda mas grave de las que suenan, y de ahi hacia arriba."""
+    for notas in ([40, 47, 52, 55, 59, 64], [45, 52, 57, 60, 64],
+                  [41, 48, 53, 57, 60, 65], [50, 57, 62, 66]):
+        trastes = digitacion_de_acorde(notas, CUERDAS_ESTANDAR)
+        sonando = [CUERDAS_ESTANDAR[i] + t
+                   for i, t in enumerate(trastes) if t is not None]
+        assert sonando == sorted(sonando)
+        assert sonando == sorted(notas)
+
+
+def test_un_acorde_con_mas_notas_que_cuerdas_no_tiene_digitacion():
+    """Mejor decir que no se puede que inventar una posicion."""
+    trastes = digitacion_de_acorde([40, 42, 44, 46, 48, 50, 52],
+                                   CUERDAS_ESTANDAR)
+    assert trastes == (None,) * 6
+
+
+def test_se_prefiere_la_posicion_mas_compacta():
+    """Entre varias asignaciones validas gana la que menos trastes abarca.
+
+    El Am entra en las cuerdas 5 a 1 con los dedos entre los trastes 1 y 2,
+    o en la 6 a la 1 salteando, con el indice en el traste 5. Tiene que
+    elegir la primera.
+    """
+    trastes = digitacion_de_acorde([45, 52, 57, 60, 64], CUERDAS_ESTANDAR)
+    pisados = [t for t in trastes if t]
+    assert max(pisados) - min(pisados) == 1
+    assert max(pisados) == 2
+
+
 def test_cada_cuerda_se_usa_una_sola_vez():
     trastes = digitacion_de_acorde([40, 47, 52, 55, 59, 64], CUERDAS_ESTANDAR)
     assert len(trastes) == 6

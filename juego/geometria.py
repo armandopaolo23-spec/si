@@ -8,6 +8,8 @@ El carril es el numero de cuerda del formato de pista (1 = la mas aguda,
 mirada de frente.
 """
 
+from itertools import combinations
+
 from nucleo.pista import CUERDAS, TRASTE_MAXIMO
 
 VENTANA_VISTA_S = 3.0    # segundos de pista visibles por encima de la linea
@@ -66,24 +68,47 @@ def digitacion_de_nota(midi, afinacion, cuerda=None, traste=None):
 def digitacion_de_acorde(notas, afinacion):
     """Traste por cuerda para un acorde, de la 6a a la 1a. None = no se toca.
 
-    Cada nota se asigna a la cuerda libre que la alcance con el traste mas
-    bajo, recorriendo de la mas grave a la mas aguda. Con los acordes
-    abiertos basicos esto reproduce las digitaciones de siempre: Em sale
-    022000, Am sale x02210, C sale x32010 y G sale 320003.
+    En una guitarra las notas de un acorde van en orden: la mas grave en la
+    cuerda mas grave de las que suenan, y de ahi hacia arriba. Esa
+    restriccion es la que hace que la digitacion sea tocable, asi que se
+    buscan las asignaciones que la respetan y se elige la mas comoda: primero
+    la que menos trastes abarca, despues la que queda mas cerca de la cejuela.
+
+    Con los acordes abiertos basicos da las digitaciones de siempre: Em sale
+    022000, Am x02210, C x32010 y G 320003.
+
+    Si ninguna asignacion es posible -por ejemplo un acorde con mas notas
+    distintas que cuerdas- devuelve todo None, que el diagrama interpreta
+    como "no hay forma de mostrarlo" en vez de inventar una posicion.
     """
-    trastes = [None] * CUERDAS          # indice 0 = 6a cuerda
-    for midi in sorted(notas):
-        candidatas = []
-        for indice, nota_cuerda in enumerate(afinacion):
-            if trastes[indice] is not None:
-                continue
-            traste = midi - nota_cuerda
-            if 0 <= traste <= TRASTE_MAXIMO:
-                candidatas.append((traste, indice))
-        if candidatas:
-            traste, indice = min(candidatas)
-            trastes[indice] = traste
-    return tuple(trastes)
+    ordenadas = sorted(notas)
+    if not ordenadas or len(ordenadas) > CUERDAS:
+        return (None,) * CUERDAS
+
+    mejor = None
+    for cuerdas in combinations(range(CUERDAS), len(ordenadas)):
+        trastes = []
+        for midi, indice in zip(ordenadas, cuerdas):
+            traste = midi - afinacion[indice]
+            if not 0 <= traste <= TRASTE_MAXIMO:
+                break
+            trastes.append(traste)
+        else:
+            pisados = [t for t in trastes if t]
+            # Se abarca menos cuando los dedos caen juntos, y entre dos
+            # igual de compactas gana la que esta mas cerca de la cejuela.
+            abarca = max(pisados) - min(pisados) if pisados else 0
+            costo = (abarca, max(trastes), sum(trastes))
+            if mejor is None or costo < mejor[0]:
+                mejor = (costo, cuerdas, trastes)
+
+    if mejor is None:
+        return (None,) * CUERDAS
+    _, cuerdas, trastes = mejor
+    resultado = [None] * CUERDAS
+    for indice, traste in zip(cuerdas, trastes):
+        resultado[indice] = traste
+    return tuple(resultado)
 
 
 def tablatura(trastes):

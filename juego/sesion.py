@@ -158,6 +158,20 @@ class Sesion:
             ))
         return tuple(vistas)
 
+    def acorde_a_la_vista(self):
+        """Acorde que conviene mostrar en el diagrama lateral, o None.
+
+        Es el primero que todavia no quedo atras: mientras se acerca sirve
+        para armar la mano, y un rato despues de tocarlo sigue visible para
+        comprobar la posicion. Una pista de solo punteo no devuelve ninguno
+        y el diagrama no se dibuja.
+        """
+        limite = self.t_pista - MARGEN_SALIDA_S
+        for evento in self.pista_actual.eventos:
+            if evento.tipo == "acorde" and evento.t >= limite:
+                return evento
+        return None
+
     def avisos_vigentes(self):
         return tuple(self.avisos)
 

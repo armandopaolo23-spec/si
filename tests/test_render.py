@@ -197,18 +197,44 @@ def test_con_etiquetas_notas_vuelve_el_nombre(pantalla, pistas):
     assert renderizador._etiqueta(vista, pistas[0].afinacion) == "E2"
 
 
-def test_el_acorde_muestra_su_digitacion(pantalla, pistas):
+def test_el_bloque_del_acorde_lleva_solo_el_nombre(pantalla, pistas):
+    """Como se arma la mano lo cuenta el diagrama del costado.
+
+    "x02210" sobre una barra que esta bajando hay que descifrarlo; la grilla
+    con los dedos se lee de un golpe.
+    """
     from juego.render import ETIQUETA_DIGITACION, ETIQUETA_NOTAS
     sesion = Sesion([pistas[2]], ventana_vista_s=3.0)
     sesion.empezar(0.0)
     sesion.avanzar(3.0)
     vista = next(n for n in sesion.notas_en_vista() if n.indice == 0)
     assert vista.evento.tipo == "acorde"
+    for modo in (ETIQUETA_DIGITACION, ETIQUETA_NOTAS):
+        assert Renderizador(pantalla, etiquetas=modo)._etiqueta(
+            vista, pistas[2].afinacion) == "Em"
 
-    con_digitacion = Renderizador(pantalla, etiquetas=ETIQUETA_DIGITACION)
-    assert con_digitacion._etiqueta(vista, pistas[2].afinacion) == "Em  022000"
-    solo_nombre = Renderizador(pantalla, etiquetas=ETIQUETA_NOTAS)
-    assert solo_nombre._etiqueta(vista, pistas[2].afinacion) == "Em"
+
+def test_el_diagrama_de_acorde_se_dibuja(pantalla, pistas):
+    sesion = Sesion([pistas[2]], ventana_vista_s=3.0)
+    sesion.empezar(0.0)
+    sesion.avanzar(3.0)
+    assert sesion.acorde_a_la_vista() is not None
+    Renderizador(pantalla).dibujar(sesion)
+    assert pinto_algo(pantalla)
+
+
+def test_un_acorde_en_posicion_alta_no_desborda_la_grilla(pantalla):
+    """Un acorde con cejilla arriba del traste 4 corre la grilla y lo indica."""
+    from nucleo.pista import desde_dict
+    # F#m con cejilla en el traste 2 llega al 4; un Bm en el 7 llega al 9.
+    pista = desde_dict({"titulo": "x", "bpm": 60, "eventos": [
+        {"t": 0.0, "dur": 2.0, "tipo": "acorde", "nombre": "Bm",
+         "notas": [59, 66, 71, 74, 78]}]})
+    sesion = Sesion([pista], ventana_vista_s=3.0)
+    sesion.empezar(0.0)
+    sesion.avanzar(3.0)
+    Renderizador(pantalla).dibujar(sesion)
+    assert pinto_algo(pantalla)
 
 
 def test_una_nota_sin_digitacion_posible_cae_en_el_nombre(pantalla):

@@ -46,7 +46,7 @@ Las pruebas no usan microfono ni audio grabado: todas las señales se
 sintetizan dentro de `tests/sintesis.py`.
 
 ```bash
-python3 -m pytest tests/ -q          # 354 pruebas, ~8 s
+python3 -m pytest tests/ -q          # 367 pruebas, ~8 s
 ```
 
 Con la guitarra, una linea por cada pulsacion detectada:
@@ -189,11 +189,21 @@ la cuerda chica, porque en que carril esta la nota ya indica la cuerda pero el
 traste no se deduce de ningun lado. Con `--etiquetas notas` se muestran los
 nombres, para cuando ya se conocen.
 
-Los acordes muestran su digitacion completa en notacion de cancionero:
-`Em 022000`, `Am x02210`, `C x32010`, `G 320003`. Se calcula asignando cada
-nota a la cuerda libre que la alcance con el traste mas bajo, y con los
-acordes abiertos basicos eso reproduce exactamente las digitaciones de
-siempre.
+Para rasguear, el bloque del acorde lleva solo el nombre y **a la derecha
+aparece su diagrama**: la grilla con los dedos, las cuerdas al aire marcadas
+con `o` y las que no suenan con `x`, como en un cancionero. Un texto como
+`x02210` sobre una barra que esta bajando hay que descifrarlo; la grilla se
+lee de un golpe. El diagrama muestra el acorde que viene y sigue un rato
+despues de tocarlo, para poder comprobar la mano. Una pista de solo punteo
+no lo dibuja.
+
+La digitacion no esta escrita a mano: se busca la asignacion de notas a
+cuerdas que respete el orden de alturas -la nota mas grave en la cuerda mas
+grave de las que suenan- y entre las validas gana la que menos trastes
+abarca. Eso da las posiciones de siempre tanto en acordes abiertos
+(Em 022000, Am x02210, C x32010, G 320003) como con cejilla (F 133211,
+Bm x24432). Si un acorde tiene mas notas distintas que cuerdas no hay
+digitacion posible y el diagrama no se dibuja, en vez de inventar una.
 
 Las notas bajan por seis carriles, uno por cuerda, con la 6a a la izquierda
 como en una tablatura mirada de frente. Los acordes ocupan los carriles de
