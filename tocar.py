@@ -5,7 +5,7 @@ Requiere pygame, que no hace falta para las fases anteriores:
     pip install -r requirements.txt
 
 Uso:
-    python3 tocar.py                       # todas las pistas de pistas/
+    python3 tocar.py                       # pistas/ y pistas/generadas/
     python3 tocar.py pistas/01_*.json      # solo las que se indiquen
     python3 tocar.py --dispositivo 3
     python3 tocar.py --umbral 0.004        # el que sugiera --calibrar
@@ -29,7 +29,9 @@ from nucleo.pista import PistaInvalida, cargar
 def rutas_de_pistas(argumentos):
     if argumentos:
         return argumentos
-    encontradas = sorted(glob.glob("pistas/*.json"))
+    # Primero las de ejemplo y despues las que haya hecho generar_pista.py.
+    encontradas = (sorted(glob.glob("pistas/*.json"))
+                   + sorted(glob.glob("pistas/generadas/*.json")))
     if not encontradas:
         raise SystemExit("No hay pistas en pistas/. Indica los archivos a mano.")
     return encontradas

@@ -27,6 +27,14 @@ MIDI_MINIMO = math.ceil(hz_a_midi(FMIN))
 MIDI_MAXIMO = math.floor(hz_a_midi(FMAX))
 
 TIPOS = ("nota", "acorde")
+
+# Ritmo para principiantes. No son errores de formato sino de pedagogia: una
+# pista mas rapida es valida, pero cuesta seguirla cuando se empieza. Un
+# acorde no se lee, se arma: la mano tiene que soltar la posicion anterior,
+# encontrar la nueva y apretar.
+SEGUNDOS_MINIMOS_ENTRE_EVENTOS = 1.0
+SEGUNDOS_MINIMOS_ENTRE_ACORDES = 6.0
+SEGUNDOS_MINIMOS_TRAS_ACORDE = 3.0
 CUERDAS = 6
 TRASTE_MAXIMO = 24
 NOTAS_MINIMAS_ACORDE = 2
@@ -318,3 +326,43 @@ def cargar(ruta):
             [f"el JSON esta mal formado en la linea {error.lineno}, "
              f"columna {error.colno}: {error.msg}"], str(ruta))
     return desde_dict(datos, origen=str(ruta))
+
+
+def advertencias_de_ritmo(pista, entrada_s):
+    """Avisos si la pista va mas rapido de lo que conviene para empezar.
+
+    `entrada_s` es cuanto tiempo se ve la pista antes de t=0 (la ventana de
+    vista del juego): el primer acorde se arma en frio, asi que su tiempo
+    disponible es esa entrada mas su `t`. Devuelve una lista vacia si la
+    pista respeta todos los minimos.
+    """
+    avisos = []
+    eventos = pista.eventos
+    for anterior, siguiente in zip(eventos, eventos[1:]):
+        hueco = siguiente.t - anterior.t
+        if hueco < SEGUNDOS_MINIMOS_ENTRE_EVENTOS:
+            avisos.append(
+                f"t={siguiente.t:g}: llega {hueco:.2f} s despues del evento "
+                f"anterior (minimo {SEGUNDOS_MINIMOS_ENTRE_EVENTOS:g} s)")
+        # Si lo que sigue es otro acorde lo cubre la regla entre acordes, que
+        # es mas exigente; avisar las dos cosas seria contar el mismo cambio
+        # dos veces.
+        elif (anterior.tipo == "acorde" and siguiente.tipo != "acorde"
+              and hueco < SEGUNDOS_MINIMOS_TRAS_ACORDE):
+            avisos.append(
+                f"t={siguiente.t:g}: quedan {hueco:.2f} s para soltar el acorde "
+                f"anterior (minimo {SEGUNDOS_MINIMOS_TRAS_ACORDE:g} s)")
+
+    acordes = [e for e in eventos if e.tipo == "acorde"]
+    if acordes and entrada_s + acordes[0].t < SEGUNDOS_MINIMOS_ENTRE_ACORDES:
+        avisos.append(
+            f"el primer acorde deja {entrada_s + acordes[0].t:.2f} s para "
+            f"armarlo (minimo {SEGUNDOS_MINIMOS_ENTRE_ACORDES:g} s)")
+    for anterior, siguiente in zip(acordes, acordes[1:]):
+        hueco = siguiente.t - anterior.t
+        if hueco < SEGUNDOS_MINIMOS_ENTRE_ACORDES:
+            avisos.append(
+                f"t={siguiente.t:g}: el {siguiente.nombre} llega {hueco:.2f} s "
+                f"despues del {anterior.nombre} (minimo "
+                f"{SEGUNDOS_MINIMOS_ENTRE_ACORDES:g} s)")
+    return avisos

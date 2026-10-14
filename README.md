@@ -7,8 +7,9 @@ correcta.
 Este repositorio tambien contiene `NodoAlertaTempranaMultiriesgo/`, un
 proyecto distinto y sin relacion con el tutor.
 
-Estado: **fases 1 a 5 terminadas** (motor de audio, modelo de pista,
-evaluador, juego y acordes). Falta la fase 6 (generador de pistas).
+Estado: **fases 1 a 5 terminadas y la 6A** (generador procedural de
+escalas y progresiones). Queda la 6B, generar pistas con un modelo de IA,
+que necesita sumar una dependencia y una API key.
 
 ## Instalacion
 
@@ -46,7 +47,7 @@ Las pruebas no usan microfono ni audio grabado: todas las señales se
 sintetizan dentro de `tests/sintesis.py`.
 
 ```bash
-python3 -m pytest tests/ -q          # 442 pruebas, ~11 s
+python3 -m pytest tests/ -q          # 516 pruebas, ~12 s
 ```
 
 Con la guitarra, una linea por cada pulsacion detectada:
@@ -272,7 +273,8 @@ audio/
   croma.py       energia por semitono, la entrada del detector de acordes
 nucleo/
   acordes.py     reconocimiento de acordes: presencia por nota y croma
-  pista.py       modelo de pista: carga y validacion del JSON
+  generador.py   escalas y progresiones generadas
+  pista.py       modelo de pista: carga, validacion y ritmo
   evaluador.py   decide acierto, fallo o nota de mas
   puntaje.py     puntos de un acierto segun la racha
   simulacion.py  toca una pista con detecciones inventadas, para probar
@@ -286,11 +288,13 @@ pistas/
   02_escala_do_mayor.json      escala de Do mayor, una nota por segundo
   03_acordes_basicos.json      solo acordes, 7 s entre cambio y cambio
   04_acordes_y_melodia.json    Em Am C G con melodia entre medio
+  generadas/                   las que escribe generar_pista.py
 tests/
   sintesis.py    generador de pulsaciones de guitarra para las pruebas
 detector_notas.py  CLI de diagnostico (ataques, afinador, calibrar)
 mostrar_pista.py   CLI que imprime la linea de tiempo de una pista
 tocar.py           el juego
+generar_pista.py   CLI que genera escalas y progresiones
 ```
 
 `sounddevice` se importa solo en `audio/captura.py` y `pygame` solo en
